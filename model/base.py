@@ -117,11 +117,16 @@ class BaseTrainer(ABC):
         self.epoch_log.append(entry)
 
         run_dir = self.init_data.get('run_dir')
-        # Default False: the best-epoch checkpoint is tracked in memory
-        # (_best_checkpoint_state) and persisted by run_experiment, so writing a
-        # .pt every epoch is wasteful I/O (1500 files/run). Opt in explicitly.
+        # The best-epoch weights are always kept in memory (_best_checkpoint_state)
+        # for final evaluation, so on-disk .pt files are optional:
+        #   - checkpoint_every_epoch: a .pt every epoch (rarely needed).
+        #   - save_checkpoint (top-level, default True): the best-epoch .pt that
+        #     run_experiment copies to best_run_N.pt (needed for later --eval-only).
+        # With save_checkpoint=false AND checkpoint_every_epoch=false -> NO .pt at
+        # all (only the JSON logs are written).
         checkpoint_every = self.config.get('training', {}).get('checkpoint_every_epoch', False)
-        should_save_disk = (checkpoint_every or is_best) and run_dir
+        save_ckpt = self.config.get('save_checkpoint', True)
+        should_save_disk = (checkpoint_every or (is_best and save_ckpt)) and run_dir
 
         if is_best or should_save_disk:
             state = self.get_checkpoint_state()

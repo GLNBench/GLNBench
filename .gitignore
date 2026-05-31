@@ -160,5 +160,5 @@ output/
 torch_geometric.nn.conv.*.py
 /analysis/plots/
 /.claude
-_*
+
 

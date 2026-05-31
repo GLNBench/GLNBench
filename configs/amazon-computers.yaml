@@ -3,7 +3,7 @@
 seed: 42
 device: cuda
 num_runs: 3
-save_checkpoint: true        # save best-epoch checkpoint per run (best_run_N.pt). Set false to skip (saves disk; no later --eval-only).
+save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
 
 dataset:
   name: amazon-computers
