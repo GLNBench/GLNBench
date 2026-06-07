@@ -518,10 +518,15 @@ class RTGNN(nn.Module):
             def _get_embeddings():
                 return self.dual_branch_predictor.get_embeddings(node_features, best_edges, best_weights)
 
+            def _get_probabilities():
+                out1, out2 = self.dual_branch_predictor(node_features, best_edges, best_weights)
+                return F.softmax((out1 + out2) / 2, dim=1)
+
             results = evaluate_model(
                 _get_predictions, _get_embeddings, node_labels,
                 train_mask, val_mask, test_mask,
-                best_edges, self.device
+                best_edges, self.device,
+                get_probabilities=_get_probabilities,
             )
 
             print(f"Test Acc: {results['test_cls']['accuracy']:.4f} | Test F1: {results['test_cls']['f1']:.4f} | "

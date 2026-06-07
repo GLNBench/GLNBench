@@ -351,10 +351,16 @@ class NRGNN:
                         self.node_features, self.best_edge_indices, self.best_edge_weights
                     )
 
+                def _get_probabilities():
+                    return F.softmax(self.main_model.forward(
+                        self.node_features, self.best_edge_indices, self.best_edge_weights
+                    ), dim=1)
+
                 results = evaluate_model(
                     _get_predictions, _get_embeddings, self.node_labels,
                     train_mask, val_mask, test_mask,
-                    self.best_edge_indices, self.device
+                    self.best_edge_indices, self.device,
+                    get_probabilities=_get_probabilities,
                 )
 
                 print(f"Test Acc: {results['test_cls']['accuracy']:.4f} | Test F1: {results['test_cls']['f1']:.4f} | "

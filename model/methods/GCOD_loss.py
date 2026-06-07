@@ -323,8 +323,12 @@ class GCODMethodTrainer(BaseTrainer):
         def get_embeddings():
             return self._helper.get_embeddings(state, data)
 
+        def get_probabilities():
+            return self._helper.get_probabilities(state, data)
+
         return evaluate_model(
             get_predictions, get_embeddings, clean_labels,
             data.train_mask, data.val_mask, data.test_mask,
             data.edge_index, d['device'],
+            get_probabilities=get_probabilities,
         )
