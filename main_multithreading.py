@@ -112,7 +112,7 @@ def run_parallel_single_benchmark():
     
     if results:
 
-        headers = ["Method", "Accuracy", "F1", "Precision", "Recall"]
+        headers = ["Method", "Accuracy", "F1", "Precision", "Recall", "ROC AUC"]
         rows = []
         for method in methods_to_test:
             if method in results:
@@ -123,9 +123,10 @@ def run_parallel_single_benchmark():
                     f"{r['f1']:.4f}",
                     f"{r['precision']:.4f}",
                     f"{r['recall']:.4f}",
+                    f"{r.get('roc_auc', 0.0):.4f}",
                 ])
             else:
-                rows.append([method, "FAILED", "FAILED", "FAILED", "FAILED"])
+                rows.append([method, "FAILED", "FAILED", "FAILED", "FAILED", "FAILED"])
 
         print_table(headers, rows)
 

@@ -29,7 +29,7 @@ def _accumulate_run_result(run_result, classification_runs, oversmoothing_runs, 
     for split in CLS_SPLITS:
         src = run_result.get(f'{split}_cls', dict(ZERO_CLS))
         for mkey in classification_runs[split]:
-            classification_runs[split][mkey].append(float(src[mkey]))
+            classification_runs[split][mkey].append(float(src.get(mkey, 0.0)))
 
     for split, key_prefix in (('test', 'test_oversmoothing'), ('train', 'train_oversmoothing'), ('val', 'val_oversmoothing')):
         src = run_result.get(key_prefix, {})
@@ -135,7 +135,7 @@ def run_benchmarking(base_folder='results', config_path=DEFAULT_CONFIG,
             print(f"CUDA device name: {torch.cuda.get_device_name(torch.cuda.current_device())}")
 
         classification_runs = {
-            split: {k: [] for k in ('accuracy', 'f1', 'precision', 'recall')}
+            split: {k: [] for k in ('accuracy', 'f1', 'precision', 'recall', 'roc_auc')}
             for split in CLS_SPLITS
         }
         oversmoothing_runs = {
@@ -233,10 +233,10 @@ def run_benchmarking(base_folder='results', config_path=DEFAULT_CONFIG,
             continue
 
         # ── Print summary tables ──
-        cls_headers = ['split', 'accuracy', 'f1', 'precision', 'recall']
+        cls_headers = ['split', 'accuracy', 'f1', 'precision', 'recall', 'roc_auc']
         cls_rows = []
         for split in ('test', 'train', 'val'):
-            cls_rows.append([split] + [fmt_mean_std(classification_runs[split][m]) for m in ('accuracy', 'f1', 'precision', 'recall')])
+            cls_rows.append([split] + [fmt_mean_std(classification_runs[split][m]) for m in ('accuracy', 'f1', 'precision', 'recall', 'roc_auc')])
         print("\nClassification Metrics:")
         print_table(cls_headers, cls_rows)
 
@@ -244,7 +244,7 @@ def run_benchmarking(base_folder='results', config_path=DEFAULT_CONFIG,
             cn_rows = []
             for split in NOISE_SPLIT_KEYS:
                 cn_rows.append([split] + [fmt_mean_std(classification_runs[split][m])
-                                for m in ('accuracy', 'f1', 'precision', 'recall')])
+                                for m in ('accuracy', 'f1', 'precision', 'recall', 'roc_auc')])
             print("\nClassification Metrics (Train noise splits):")
             print_table(cls_headers, cn_rows)
 
