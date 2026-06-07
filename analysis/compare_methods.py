@@ -148,6 +148,7 @@ def print_summary_table(group_exps, group_key):
             'Method': exp['method'],
             'Test Acc': fmt_mean_std(get_metric(exp, 'test', 'accuracy')),
             'Test F1': fmt_mean_std(get_metric(exp, 'test', 'f1')),
+            'Test ROC AUC': fmt_mean_std(get_metric(exp, 'test', 'roc_auc')),
             'Val Acc': fmt_mean_std(get_metric(exp, 'val', 'accuracy')),
             'Train Acc': fmt_mean_std(get_metric(exp, 'train', 'accuracy')),
             'Val Clean': fmt_mean_std(get_metric(exp, 'val_only_clean', 'accuracy')),
@@ -506,7 +507,7 @@ def plot_compute(group_exps, group_key, out_dir):
 
 def plot_summary_table(group_exps, group_key, out_dir):
     """Render the summary table as a clean image."""
-    columns = ['Method', 'Test Acc', 'Test F1', 'Val Acc', 'Train Acc',
+    columns = ['Method', 'Test Acc', 'Test F1', 'Test ROC AUC', 'Val Acc', 'Train Acc',
                'Val Clean', 'Val Mislbl', 'MAD', 'Time(s)']
 
     cell_data = []
@@ -517,6 +518,7 @@ def plot_summary_table(group_exps, group_key, out_dir):
             exp['method'],
             fmt_mean_std(get_metric(exp, 'test', 'accuracy')),
             fmt_mean_std(get_metric(exp, 'test', 'f1')),
+            fmt_mean_std(get_metric(exp, 'test', 'roc_auc')),
             fmt_mean_std(get_metric(exp, 'val', 'accuracy')),
             fmt_mean_std(get_metric(exp, 'train', 'accuracy')),
             fmt_mean_std(get_metric(exp, 'val_only_clean', 'accuracy')),
