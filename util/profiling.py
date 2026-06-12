@@ -5,8 +5,7 @@ import torch
 from torch.profiler import profile, ProfilerActivity
 
 from model.gnns import GCN, GIN, GAT, GATv2, GPS, GCN_modified
-# SheafNN  variants
-from model.SheafNN_Light import SheafNN_Light
+# SheafNN  
 from model.SheafNN import SheafNN
 _profiler_lock = threading.Lock()
 
