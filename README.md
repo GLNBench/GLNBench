@@ -53,7 +53,10 @@ or configuration data to a server.
 For a zero-setup, CPU-friendly demonstration, open
 [`examples/quickstart.ipynb`](examples/quickstart.ipynb) in Google Colab. Full
 benchmark sweeps should still be run in a controlled local, server, or cluster
-environment.
+environment. The notebook supports Colab's Python 3.12 runtime through
+`requirements-colab.txt`, preserving Colab's preinstalled PyTorch build. This
+quickstart environment is for demonstration; use the Python 3.10/3.11 pinned
+environment below when reproducing benchmark results.
 
 
 ```bash
@@ -1071,7 +1074,9 @@ Tests use 5 epochs on Cora with reduced hyperparameters for speed. The test suit
 +-- configs/                        # Canonical full benchmark configurations
 +-- results/                        # Generated experiment outputs
 +-- images/                         # Figures for README
-+-- requirements.txt
++-- examples/quickstart.ipynb       # Colab-compatible Cora demonstration
++-- requirements.txt               # Pinned Python 3.10/3.11 release environment
++-- requirements-colab.txt         # Python 3.12 Colab quickstart environment
 +-- setup.sh                        # GPU installation script
 +-- setup_macos.sh                  # macOS/CPU installation helper
 +-- test.sh                         # Test runner

@@ -1,0 +1,17 @@
+# Google Colab quickstart environment (Python 3.12).
+# Colab already provides a compatible PyTorch build; preserving that build
+# avoids replacing its matching CUDA runtime. The fully pinned reproduction
+# environment remains requirements.txt on Python 3.10/3.11. This file targets
+# the notebook's Standard/full-batch demonstration, not methods whose samplers
+# require optional compiled PyG extensions.
+torch-geometric==2.7.0
+numpy>=1.26.4,<2
+scipy>=1.12,<2
+pandas>=2.2,<3
+scikit-learn>=1.4,<1.8
+networkx>=3.2,<4
+cleanlab==2.7.1
+matplotlib>=3.7,<4
+codecarbon==2.4.2
+PyYAML>=6.0.1,<7
+requests>=2.31,<3

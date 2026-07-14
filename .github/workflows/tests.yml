@@ -27,3 +27,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip check
+
+      - name: Run test suite
+        run: python -m pytest -q
