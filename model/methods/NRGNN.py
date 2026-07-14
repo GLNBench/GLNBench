@@ -1,0 +1,493 @@
+import numpy as np
+from copy import deepcopy
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import scipy.sparse as sp
+from torch_geometric.utils import from_scipy_sparse_matrix, to_undirected, negative_sampling, to_scipy_sparse_matrix
+from torch_geometric.nn import GCNConv
+
+from model.evaluation import (OversmoothingMetrics, ClassificationMetrics,
+                              evaluate_model,
+                              DEFAULT_OVERSMOOTHING, ZERO_CLS)
+from model.base import BaseTrainer
+from model.registry import register
+
+class NRGNN:
+
+    def __init__(self, config, device, base_model=None):
+        self.device = device
+        self.config = config
+        self.base_model_class = base_model
+        
+        # Training parameters
+        self.learning_rate = config.get('lr', 0.01)
+        self.weight_decay = float(config.get('weight_decay', 5e-4))
+        self.max_epochs = config.get('epochs', 1000)
+        self.patience = config.get('patience', 100)
+        
+        # NRGNN specific parameters
+        nrgnn_params = config.get('nrgnn_params', {})
+        self.edge_hidden_dim = nrgnn_params.get('edge_hidden', 16)
+        self.num_potential_edges = nrgnn_params.get('n_p', 10)
+        self.confidence_threshold = nrgnn_params.get('p_u', 0.7)
+        self.reconstruction_weight = nrgnn_params.get('alpha', 0.05)
+        self.consistency_weight = nrgnn_params.get('beta', 1.0)
+        self.edge_threshold = nrgnn_params.get('t_small', 0.1)
+        self.negative_samples_ratio = nrgnn_params.get('n_n', 50)
+        self.oversmoothing_every = config.get('oversmoothing_every', 20)
+
+        # Model components
+        self.node_predictor = None
+        self.main_model = None
+        self.edge_weight_estimator = None
+        self.adjacency_estimator = None
+        self.optimizer = None
+        
+        self.best_validation_loss = float('inf')
+        self.best_predictor_accuracy = 0.0
+        self.early_stopping_counter = 0
+        
+        # Model weights storage
+        self.best_predictions = None
+        self.best_predictor_edge_weights = None
+        self.best_edge_weights = None
+        self.best_edge_indices = None
+        self._current_edge_indices = None
+        self._current_edge_weights = None
+        
+        self.original_edge_index = None
+        self.potential_edge_index = None
+        self.confident_edge_index = None
+        self.confident_node_indices = None
+        self.unlabeled_node_indices = None
+
+        self.node_features = None
+        self.node_labels = None
+        
+        # Evaluation
+        self.oversmoothing_evaluator = OversmoothingMetrics(device=device)
+        self.cls_evaluator = ClassificationMetrics(average='macro')
+        self.oversmoothing_metrics_history = {
+            'train': [],
+            'val': [],
+            'test': []
+        }
+
+    def compute_accuracy(self, model_output, true_labels):
+        if not isinstance(true_labels, torch.Tensor):
+            true_labels = torch.LongTensor(true_labels)
+        predictions = model_output.max(1)[1].type_as(true_labels)
+        correct_predictions = predictions.eq(true_labels).double()
+        return correct_predictions.sum() / len(true_labels)
+
+    def convert_sparse_to_torch_tensor(self, sparse_matrix):
+        sparse_matrix = sparse_matrix.tocoo().astype(np.float32)
+        indices = torch.from_numpy(
+            np.vstack((sparse_matrix.row, sparse_matrix.col)).astype(np.int64)
+        )
+        values = torch.from_numpy(sparse_matrix.data)
+        shape = torch.Size(sparse_matrix.shape)
+        return torch.sparse_coo_tensor(indices, values, shape)
+
+    def create_edge_weight_estimator(self, input_features, hidden_dim, output_dim):
+        # Create GCN-based edge weight estimator
+        estimator = nn.Module()
+        estimator.first_conv = GCNConv(input_features, hidden_dim, bias=True, add_self_loops=True)
+        estimator.second_conv = GCNConv(hidden_dim, output_dim, bias=True, add_self_loops=True)
+        
+        def forward_fn(node_features, edge_index, edge_weights=None):
+            node_features = F.relu(estimator.first_conv(node_features, edge_index, edge_weights))
+            node_features = F.dropout(node_features, 0.0, training=estimator.training)
+            node_features = estimator.second_conv(node_features, edge_index, edge_weights)
+            return node_features
+            
+        def reset_params_fn():
+            estimator.first_conv.reset_parameters()
+            estimator.second_conv.reset_parameters()
+        
+        estimator.forward = forward_fn
+        estimator.reset_parameters = reset_params_fn
+        return estimator
+
+    def create_gnn_wrapper(self, base_model):
+        """Wrap a backbone GNN to accept (features, edge_index, edge_weights) instead of Data.
+
+        Exposes forward(), get_embeddings(), and reset_parameters().
+        get_embeddings() delegates to base_model.get_embeddings() returning hidden_channels dim.
+        """
+        wrapper = nn.Module()
+        wrapper.base_gnn_model = base_model
+
+        def _make_data(node_features, edge_index, edge_weights):
+            data_obj = type('GraphData', (), {})()
+            data_obj.x = node_features
+            data_obj.edge_index = edge_index
+            data_obj.edge_weight = edge_weights
+            return data_obj
+
+        def forward_fn(node_features, edge_index, edge_weights=None):
+            return wrapper.base_gnn_model(wrapper._make_data(node_features, edge_index, edge_weights))
+
+        def get_embeddings_fn(node_features, edge_index, edge_weights=None):
+            return wrapper.base_gnn_model.get_embeddings(wrapper._make_data(node_features, edge_index, edge_weights))
+
+        def reset_params_fn():
+            if hasattr(wrapper.base_gnn_model, 'initialize'):
+                wrapper.base_gnn_model.initialize()
+            else:
+                for module in wrapper.base_gnn_model.modules():
+                    if hasattr(module, 'reset_parameters'):
+                        module.reset_parameters()
+
+        wrapper._make_data = _make_data
+        wrapper.forward = forward_fn
+        wrapper.get_embeddings = get_embeddings_fn
+        wrapper.reset_parameters = reset_params_fn
+        return wrapper
+
+    def compute_estimated_edge_weights(self, edge_index, node_representations):
+        # Faithful to EstimateAdj.get_estimated_weigths in the official NRGNN code:
+        #   output = sum(repr[src] * repr[dst]); w = relu(output); w[w < t_small] = 0
+        source_nodes = node_representations[edge_index[0]]
+        target_nodes = node_representations[edge_index[1]]
+        similarity_scores = torch.sum(source_nodes * target_nodes, dim=1)
+        estimated_weights = F.relu(similarity_scores)
+        estimated_weights = torch.where(
+            estimated_weights < self.edge_threshold,
+            torch.zeros_like(estimated_weights),
+            estimated_weights,
+        )
+        return estimated_weights
+
+    def compute_reconstruction_loss(self, edge_index, node_representations):
+        #Compute edge reconstruction loss
+        num_nodes = node_representations.shape[0]
+        
+        #Generate negative samples
+        negative_edges = negative_sampling(
+            edge_index, num_nodes=num_nodes, 
+            num_neg_samples=self.negative_samples_ratio * num_nodes
+        ).to(self.device)
+        
+        negative_edges = negative_edges[:, negative_edges[0] < negative_edges[1]]
+        positive_edges = edge_index[:, edge_index[0] < edge_index[1]]
+        
+        if negative_edges.shape[1] == 0 or positive_edges.shape[1] == 0:
+            return torch.tensor(0.0, device=self.device, requires_grad=True)
+        
+        #Compute similarities
+        negative_similarities = torch.sum(
+            node_representations[negative_edges[0]] * node_representations[negative_edges[1]], 
+            dim=1
+        )
+        positive_similarities = torch.sum(
+            node_representations[positive_edges[0]] * node_representations[positive_edges[1]], 
+            dim=1
+        )
+        
+        #Compute losses
+        # N-4 Fix: Normalized by number of samples to stay in scale
+        negative_loss = F.mse_loss(negative_similarities, torch.zeros_like(negative_similarities), reduction='mean')
+        positive_loss = F.mse_loss(positive_similarities, torch.ones_like(positive_similarities), reduction='mean')
+        
+        reconstruction_loss = (negative_loss + positive_loss)
+        
+        return reconstruction_loss
+
+    def _indices_to_mask(self, indices, num_nodes):
+        """Convert index array to boolean mask."""
+        mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
+        if isinstance(indices, np.ndarray):
+            indices = torch.tensor(indices, device=self.device)
+        elif not isinstance(indices, torch.Tensor):
+            indices = torch.tensor(list(indices), device=self.device)
+        mask[indices] = True
+        return mask
+
+    def prepare_training_data(self, features, adjacency_matrix, labels, train_indices):
+        self.original_edge_index, _ = from_scipy_sparse_matrix(adjacency_matrix)
+        self.original_edge_index = self.original_edge_index.to(self.device)
+        
+        if sp.issparse(features):
+            features = self.convert_sparse_to_torch_tensor(features).to_dense()
+        else:
+            if sp.issparse(features):
+                features = self.convert_sparse_to_torch_tensor(features).to_dense()
+            else:
+                if isinstance(features, torch.Tensor):
+                    features = features.float()
+                else:
+                    features = torch.FloatTensor(np.array(features))
+
+        self.node_features = features.to(self.device)
+
+        if isinstance(labels, torch.Tensor):
+            self.node_labels = labels.long().to(self.device)
+        else:
+            self.node_labels = torch.LongTensor(np.array(labels)).to(self.device)
+
+        all_node_indices = set(range(self.node_features.shape[0]))
+        train_node_set = set(train_indices.tolist() if isinstance(train_indices, np.ndarray) else train_indices)
+        unlabeled_nodes = list(all_node_indices - train_node_set)
+        self.unlabeled_node_indices = torch.LongTensor(unlabeled_nodes).to(self.device)
+
+    def initialize_model_components(self):
+
+        predictor_base = deepcopy(self.base_model_class)
+        main_model_base = deepcopy(self.base_model_class)
+        
+        self.node_predictor = self.create_gnn_wrapper(predictor_base).to(self.device)
+        self.main_model = self.create_gnn_wrapper(main_model_base).to(self.device)
+        self.edge_weight_estimator = self.create_edge_weight_estimator(
+            self.node_features.shape[1], self.edge_hidden_dim, self.edge_hidden_dim
+        ).to(self.device)
+        
+        self.potential_edge_index = self.generate_potential_edges()
+        
+        all_parameters = (list(self.main_model.parameters()) + 
+                         list(self.edge_weight_estimator.parameters()) + 
+                         list(self.node_predictor.parameters()))
+        
+        self.optimizer = optim.Adam(
+            all_parameters, 
+            lr=self.learning_rate, 
+            weight_decay=self.weight_decay
+        )
+
+    def generate_potential_edges(self):
+        if self.num_potential_edges <= 0:
+            return None
+            
+        num_nodes = self.node_features.shape[0]
+        max_neighbors = min(self.num_potential_edges, num_nodes - 1)
+        
+        # Normalize features
+        normalized_features = F.normalize(self.node_features, p=2, dim=1)
+        
+        potential_edges = []
+        
+        for node_idx in range(num_nodes):
+            # Compute similarities
+            similarities = torch.mm(normalized_features[node_idx:node_idx+1], normalized_features.t()).squeeze()
+            
+            similarities[node_idx] = -1
+            _, top_similar_nodes = similarities.topk(max_neighbors)
+            
+            # Find existing neighbors
+            existing_neighbors = set(self.original_edge_index[1][self.original_edge_index[0] == node_idx].cpu().numpy())
+            
+            # Add edges to non-existing neighbors
+            for similar_node in top_similar_nodes:
+                similar_node_idx = similar_node.item()
+                if similar_node_idx not in existing_neighbors:
+                    potential_edges.append([node_idx, similar_node_idx])
+        
+        if not potential_edges:
+            return None
+            
+        potential_edges_tensor = torch.tensor(potential_edges, dtype=torch.long, device=self.device).t()
+        potential_edges_tensor = to_undirected(potential_edges_tensor, num_nodes=num_nodes)
+        
+        return potential_edges_tensor
+
+    def identify_confident_edges(self, prediction_probabilities):
+        """Faithful re-implementation of the official NRGNN ``get_model_edge``.
+
+        idx_add = unlabeled nodes whose predictor confidence exceeds ``p_u``.
+        Confident pseudo-labeled nodes are linked to the unlabeled nodes
+        (edges from every unlabeled node to each confident node, minus
+        self-loops) so the main GCN can leverage the mined pseudo-labels.
+
+        NOTE: this is the official O(|unlabeled| x |confident|) construction.
+        It is faithful to the paper but does NOT scale — on large graphs it can
+        OOM and on dense graphs it makes the augmented graph near-complete
+        (rank-1 oversmoothing collapse). That is an intrinsic property of NRGNN
+        and is reported as a benchmark finding, not patched here.
+
+        Returns (unlabel_edge_index, idx_add) where idx_add is a LongTensor.
+        """
+        empty_add = torch.empty((0,), dtype=torch.long, device=self.device)
+        if len(self.unlabeled_node_indices) == 0:
+            return torch.empty((2, 0), dtype=torch.long, device=self.device), empty_add
+
+        max_probabilities = prediction_probabilities.max(dim=1)[0]
+        confident_mask = (
+            max_probabilities[self.unlabeled_node_indices] > self.confidence_threshold
+        )
+        idx_add = self.unlabeled_node_indices[confident_mask]
+
+        if len(idx_add) == 0:
+            return torch.empty((2, 0), dtype=torch.long, device=self.device), idx_add
+
+        # row = [u1, u2, ..., uN, u1, u2, ...] (idx_unlabel repeated len(idx_add) times)
+        # col = [c1, c1, ..., c1, c2, c2, ...] (each confident node repeated N times)
+        row = self.unlabeled_node_indices.repeat(len(idx_add))
+        col = idx_add.repeat(len(self.unlabeled_node_indices), 1).T.flatten()
+        mask = row != col
+
+        confident_edge_index = torch.stack([row[mask], col[mask]], dim=0)
+        return confident_edge_index, idx_add
+
+    def test(self, test_indices):
+        self.main_model.eval()
+        self.node_predictor.eval()
+
+        with torch.no_grad():
+            if self.best_edge_weights is not None and self.best_edge_indices is not None:
+                num_nodes = self.node_features.shape[0]
+                train_mask = self._indices_to_mask(self.train_indices, num_nodes)
+                val_mask = self._indices_to_mask(self.validation_indices, num_nodes)
+                test_mask = self._indices_to_mask(test_indices, num_nodes)
+
+                def _get_predictions():
+                    return self.main_model.forward(
+                        self.node_features, self.best_edge_indices, self.best_edge_weights
+                    ).argmax(dim=1)
+
+                def _get_embeddings():
+                    return self.main_model.get_embeddings(
+                        self.node_features, self.best_edge_indices, self.best_edge_weights
+                    )
+
+                def _get_probabilities():
+                    return F.softmax(self.main_model.forward(
+                        self.node_features, self.best_edge_indices, self.best_edge_weights
+                    ), dim=1)
+
+                results = evaluate_model(
+                    _get_predictions, _get_embeddings, self.node_labels,
+                    train_mask, val_mask, test_mask,
+                    self.best_edge_indices, self.device,
+                    get_probabilities=_get_probabilities,
+                )
+
+                print(f"Test Acc: {results['test_cls']['accuracy']:.4f} | Test F1: {results['test_cls']['f1']:.4f} | "
+                      f"Precision: {results['test_cls']['precision']:.4f}, Recall: {results['test_cls']['recall']:.4f}")
+                print(f"Test Oversmoothing: {results['test_oversmoothing']}")
+
+                return results
+
+            return {
+                'test_cls': dict(ZERO_CLS),
+                'train_cls': dict(ZERO_CLS),
+                'val_cls': dict(ZERO_CLS),
+                'test_oversmoothing': dict(DEFAULT_OVERSMOOTHING),
+                'train_oversmoothing_final': dict(DEFAULT_OVERSMOOTHING),
+                'val_oversmoothing_final': dict(DEFAULT_OVERSMOOTHING),
+            }
+
+
+@register('nrgnn')
+class NRGNNMethodTrainer(BaseTrainer):
+
+    def train(self):
+        from methods.registry import get_helper
+        from training.training_loop import TrainingLoop
+        d = self.init_data
+        self._helper = get_helper('nrgnn')
+        self._loop = TrainingLoop(self._helper, log_epoch_fn=self.log_epoch)
+        result = self._loop.run(
+            d['backbone_model'], d['data_for_training'],
+            self.config, d['device'], d,
+        )
+        self._nrgnn = self._loop.state['nrgnn']
+        self._test_idx = d['test_mask'].nonzero(as_tuple=True)[0].cpu().numpy()
+        return result
+
+    def _get_state(self):
+        if hasattr(self, '_loop') and hasattr(self._loop, '_state'):
+            return self._loop.state
+        return None
+
+    def get_checkpoint_state(self) -> dict:
+        return self._helper.get_checkpoint_state(self._get_state())
+
+    def _setup_for_eval(self, checkpoint_state):
+        """Create state via helper so load_checkpoint_state can populate it."""
+        from methods.registry import get_helper
+        from training.training_loop import TrainingLoop
+        d = self.init_data
+        if not hasattr(self, '_helper'):
+            self._helper = get_helper('nrgnn')
+        self._loop = TrainingLoop(self._helper)
+        state = self._helper.setup(
+            d['backbone_model'], d['data_for_training'],
+            self.config, d['device'], d,
+        )
+        self._loop._state = state
+        self._nrgnn = state['nrgnn']
+        self._test_idx = d['test_mask'].nonzero(as_tuple=True)[0].cpu().numpy()
+
+    def load_checkpoint_state(self, state):
+        if not hasattr(self, '_nrgnn'):
+            self._setup_for_eval(state)
+        self._helper.load_checkpoint_state(self._get_state(), state)
+
+    def profile_flops(self):
+        from util.profiling import profile_model_flops
+        nrgnn = self._nrgnn
+        d = self.init_data
+
+        def fwd():
+            edges = getattr(nrgnn, '_current_edge_indices', None)
+            if edges is None:
+                edges = nrgnn.best_edge_indices
+            if edges is None:
+                edges = nrgnn.original_edge_index
+            weights = getattr(nrgnn, '_current_edge_weights', None)
+            if weights is None:
+                weights = nrgnn.best_edge_weights
+            if weights is None:
+                weights = torch.ones(edges.shape[1], device=nrgnn.device)
+            return nrgnn.main_model.forward(
+                nrgnn.node_features, edges, weights
+            )
+
+        return profile_model_flops(nrgnn.main_model, d['data_for_training'],
+                                   d['device'], forward_fn=fwd)
+
+    def profile_training_step(self):
+        """Profile one training step (forward + backward) for all 3 NRGNN models.
+
+        Simplified vs the real training step — omits potential/confident edge
+        bookkeeping (which is non-differentiable), but connects
+        edge_weight_estimator to the loss via the reconstruction term so that
+        its backward pass is profiled.
+        """
+        from util.profiling import profile_training_step_flops
+        nrgnn = self._nrgnn
+        d = self.init_data
+
+        edge_weights = torch.ones(nrgnn.original_edge_index.shape[1],
+                                  device=nrgnn.device, dtype=torch.float32)
+
+        def step_fn():
+            node_reps = nrgnn.edge_weight_estimator.forward(
+                nrgnn.node_features, nrgnn.original_edge_index, edge_weights
+            )
+            recon_loss = nrgnn.compute_reconstruction_loss(
+                nrgnn.original_edge_index, node_reps
+            )
+            predictor_logits = nrgnn.node_predictor.forward(
+                nrgnn.node_features, nrgnn.original_edge_index, edge_weights
+            )
+            main_out = nrgnn.main_model.forward(
+                nrgnn.node_features, nrgnn.original_edge_index, edge_weights
+            )
+            train_idx = nrgnn.train_indices
+            predictor_loss = F.cross_entropy(
+                predictor_logits[train_idx], nrgnn.node_labels[train_idx]
+            )
+            main_loss = F.cross_entropy(
+                main_out[train_idx], nrgnn.node_labels[train_idx]
+            )
+            return predictor_loss + main_loss + nrgnn.reconstruction_weight * recon_loss
+
+        models = [nrgnn.main_model, nrgnn.node_predictor,
+                  nrgnn.edge_weight_estimator]
+        return profile_training_step_flops(models, d['device'], step_fn)
+
+    def evaluate(self):
+        return self._nrgnn.test(self._test_idx)

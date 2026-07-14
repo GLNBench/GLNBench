@@ -1,0 +1,146 @@
+# Small, single-run example intended to work on CPU after installing the
+# release environment. Use configs/*.yaml for the complete paper benchmarks.
+seed: 42
+device: cpu
+num_runs: 1
+
+dataset:
+  name: cora
+  root: data
+  normalize: true
+
+noise:
+  type: uniform
+  rate: 0.2
+  seed: 42
+
+model:
+  name: gcn
+  hidden_channels: 16
+  n_layers: 2
+  dropout: 0.2
+  # --- Backbone knobs (all switchable here). Recommended settings differ by graph type:
+  #   HOMOPHILIC  (cora, citeseer, pubmed, dblp, amazon-computers/photo):
+  #       self_loop: true,  use_residual: false, jk: none,  normalization: layer (or batch for dense),
+  #       dataset.normalize: true,  n_layers: 2-3
+  #   HETEROPHILIC (roman-empire, amazon-ratings, minesweeper, tolokers, questions):
+  #       self_loop: FALSE, use_residual: true,  jk: cat,   normalization: layer,
+  #       dataset.normalize: false, n_layers: deeper (e.g. 5-11)
+  # (These reproduce the "Classic GNNs are Strong Baselines" (arXiv:2406.08993) setup.)
+  self_loop: true      # Set FALSE for heterophilous datasets (self-loops dilute the neighbour signal -> ~10-15% drop)
+  use_residual: false  # Set true for heterophilous datasets (e.g. roman-empire)
+  jk: none             # none | cat | max — Jumping-Knowledge. Use 'cat' for heterophilous / deep models; needed to match paper numbers there.
+  normalization: layer # none | batch | layer. LayerNorm fixes dense-graph collapse without hurting sparse graphs; batch is strongest on large dense graphs.
+  mlp_layers: 1
+  train_eps: false
+  heads: 8
+  use_pe: false
+  pe_dim: 8
+  # --- GCN_modified-only knobs (the tunedGNN "strong baseline" backbone).
+  #     Used ONLY when name: gcn_modified; ignored for every other backbone. ---
+  inner_gnn: gcn       # gcn | gat | sage — inner conv of GCN_modified (gcn=GCN*, gat=GAT*, sage=GraphSAGE*)
+  pre_linear: false    # project features before message passing
+  lin_res: false       # learned linear residual conv(x)+W_i*x (key for heterophily)
+  mod_norm: none       # none | ln | bn — per-layer normalization inside GCN_modified
+  pre_ln: false
+
+training:
+  method: standard
+  lr: 0.01
+  weight_decay: 5e-4
+  epochs: 200
+  patience: 20
+  early_stopping_metric: val_acc
+  oversmoothing_every: 20
+  mode: transductive   # transductive or inductive
+  # batch_size: 512    # uncomment to enable mini-batch processing
+  # sampler: neighbor   # neighbor, cluster, graphsaint, or random_node
+  # sampler_params:     # sampler-specific parameters
+  #   num_neighbors: [15, 10]
+
+positive_eigenvalues_params:
+  batch_size: 32
+
+gcod_params:
+  batch_size: 64
+  uncertainty_lr: 0.001     # u needs to adapt quickly to separate clean/noisy samples
+  kl_start_epoch: 2    # Delay KL activation to allow initial stabilization
+  momentum: 0          # No centroid momentum (correction mode uses margin-based filtering)
+  temperature: 1       # Soften distributions in L3 loss
+  similarity_mode: correction  # 'correction' (label correction via centroids) or 'discount' (original)
+
+nrgnn_params:
+  edge_hidden: 16
+  n_p: 2              # reduced from 10
+  p_u: 0.7
+  alpha: 0.05
+  beta: 1.0
+  t_small: 0.1
+  n_n: 5              # reduced from 50
+
+pi_gnn_params:
+  start_epoch: 1      # must be < epochs to exercise MI path
+  miself: false
+  norm: null
+  vanilla: false
+
+cr_gnn_params:
+  T: 2
+  tau: 0.6
+  p: 0.9
+  alpha: 0.2
+  beta: 0.9
+  pr: 0.3
+
+community_defense_params:
+  community_method: louvain
+  num_communities: null
+  lambda_comm: 1.0
+  pos_weight: 2.0
+  neg_weight: 2.0
+  margin: 1.5
+  num_neg_samples: 3
+
+rtgnn_params:
+  edge_hidden: 16
+  co_lambda: 0.1
+  alpha: 0.3
+  th: 0.8
+  K: 3              # reduced from 50
+  tau: 0.05
+  n_neg: 10         # reduced from 100
+
+graphcleaner_params:
+  k: 5
+  sample_rate: 0.5
+  max_iter_classifier: 50  # reduced from 5000
+  held_split: valid
+
+unionnet_params:
+  k: 10
+  alpha: 0.5
+  beta: 1
+  feat_norm: true
+
+gnn_cleaner_params:
+  label_propagation_iterations: 5  # reduced from 50
+  similarity_epsilon: 1e-8
+
+erase_params:
+  n_embedding: 32     # reduced from 512
+  n_heads: 8
+  use_layer_norm: false
+  use_residual: false
+  use_residual_linear: false
+  gam1: 1.0
+  gam2: 2.0
+  eps: 0.05
+  alpha: 0.6
+  beta: 0.6
+  T: 3
+
+gnnguard_params:
+  P0: 0.5
+  K: 2
+  D2: 16
+  attention: true

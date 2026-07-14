@@ -1,0 +1,19 @@
+# Reproducibility baseline: Python 3.10 or 3.11.
+--find-links https://data.pyg.org/whl/torch-2.2.1+cpu.html
+torch==2.2.1
+torch-geometric==2.5.3
+torch-scatter==2.1.2
+torch-sparse==0.6.18
+numpy==1.26.4
+scipy==1.12.0
+pandas==2.2.3
+scikit-learn==1.2.2
+networkx==3.2.1
+cleanlab==2.7.1
+matplotlib==3.7.2
+codecarbon==2.4.2
+PyYAML==6.0.1
+requests==2.31.0
+
+# Test runner (also used by ./test.sh).
+pytest==8.2.2

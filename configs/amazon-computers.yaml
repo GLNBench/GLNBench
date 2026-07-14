@@ -1,0 +1,125 @@
+# amazon-computers — gcn & gat baselines (homophilic DENSE).  All 13 methods x noise sweep.
+# Run:  python main.py -c configs/amazon-computers.yaml
+seed: 42
+device: cuda
+num_runs: 3
+save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
+
+dataset:
+  name: amazon-computers
+  root: data
+  normalize: true        # row-normalize features (false for heterophilic)
+
+noise:
+  type: £[clean, uniform, pair]   # add/edit rates & types as needed
+  rate: 0.3
+  seed: 42
+
+model:
+  name: £[gcn, gat]
+  hidden_channels: 64
+  n_layers: 2
+  dropout: 0.5
+  self_loop: true          # FALSE for heterophilic (self-loops dilute neighbour signal)
+  use_residual: false      # true for heterophilic
+  jk: none                # none|cat|max — 'cat' for heterophilic
+  normalization: batch     # none|batch|layer (batch is strongest on dense)
+  heads: 8
+  mlp_layers: 1
+  train_eps: false
+  use_pe: false
+  pe_dim: 8
+
+training:
+  method: £[standard, positive_eigenvalues, gcod, nrgnn, pi_gnn, cr_gnn, community_defense, rtgnn, graphcleaner, unionnet, gnn_cleaner, erase, gnnguard]
+  lr: 0.01
+  weight_decay: 5e-4
+  epochs: 300
+  patience: 100
+  oversmoothing_every: 20
+  mode: transductive
+  checkpoint_every_epoch: false  # also save a .pt EVERY epoch (huge #files). Keep false; best-epoch is always kept.
+
+gcod_params:                 # DELIBERATELY TUNED per dataset (do NOT "fix" to paper values)
+  batch_size: 64
+  uncertainty_lr: 0.001        # cora=0.1 (sparse, reliable signal); dblp/amazon/roman=0.001
+  kl_start_epoch: 2
+  momentum: 0
+  temperature: 1.0
+  similarity_mode: correction
+
+positive_eigenvalues_params:
+  batch_size: 32          # unused (PE is full-batch now); kept for back-compat
+
+nrgnn_params:
+  edge_hidden: 64         # official EnyanDai/NRGNN --edge_hidden default
+  n_p: 50                 # paper default; NOTE: NRGNN builds O(|unlabeled|x|confident|)
+  p_u: 0.8                # edges -> can OOM/oversmooth on large/dense graphs (a finding)
+  alpha: 0.03
+  beta: 1.0
+  t_small: 0.1
+  n_n: 50
+
+pi_gnn_params:
+  start_epoch: 200        # official TianBian95/pi-gnn default (absolute epoch; needs epochs > 200)
+  miself: false
+  norm: 10000             # official sentinel (analytic loss_norm); same behaviour as null
+  vanilla: false
+
+cr_gnn_params:
+  T: 2
+  tau: 0.5
+  p: 0.8
+  alpha: 0.2
+  beta: 0.2
+  pr: 0.3
+
+community_defense_params:
+  community_method: louvain
+  num_communities: null
+  lambda_comm: 1.0
+
+rtgnn_params:
+  edge_hidden: 64
+  co_lambda: 0.1
+  alpha: 1.0
+  th: 0.95                # official GhostQ99/RobustTrainingGNN --th default
+  K: 100                  # official --K default
+  tau: 0.05
+  n_neg: 100
+  decay_w: 0.1
+
+graphcleaner_params:
+  k: 3                    # official lywww/GraphCleaner --k default
+  sample_rate: 0.5
+  max_iter_classifier: 500  # mirrors official binary-detector budget (bc_epochs=500)
+  held_split: valid
+
+unionnet_params:
+  k: 10
+  alpha: 0.5
+  beta: 1
+  feat_norm: true
+
+gnn_cleaner_params:
+  label_propagation_iterations: 50   # paper: "execute label propagation 50 iterations each epoch for all experiments"
+  similarity_epsilon: 1.0e-8   # float (1e-8 parses as a string in YAML 1.1)
+
+erase_params:
+  n_embedding: 512        # official eraseai/erase --n_embedding default
+  n_heads: 8
+  use_layer_norm: false
+  use_residual: false
+  use_residual_linear: false
+  gam1: 1.0
+  gam2: 2.0
+  eps: 0.05
+  alpha: 0.6
+  beta: 0.6
+  T: 5                    # official default / Cora (3 is the PubMed value)
+
+gnnguard_params:
+  P0: 0.1                 # official mims-harvard/GNNGuard pruning threshold (sim<0.1=0)
+  K: 2
+  D2: 16
+  attention: true

@@ -1,0 +1,160 @@
+import os
+import torch
+import yaml
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import copy
+import time
+
+from util.experiment import run_experiment
+from util.cli import parse_arguments, print_table
+from model.evaluation import OVERSMOOTHING_KEYS
+
+
+def run_single_experiment_fixed_seed(method_name, config, fixed_run_id=1,
+                                     checkpoint_path=None, eval_only=False,
+                                     run_dir=None):
+
+    try:
+
+        experiment_config = copy.deepcopy(config)
+        experiment_config['training']['method'] = method_name
+
+        mode = "eval-only" if eval_only else "training"
+        print(f"\n[{method_name}] Starting {mode} with fixed run_id={fixed_run_id}")
+        test_metrics = run_experiment(
+            experiment_config, run_id=fixed_run_id,
+            checkpoint_path=checkpoint_path, eval_only=eval_only,
+            run_dir=run_dir if not eval_only else None,
+        )
+        print(f"[{method_name}] Completed - Test Acc: {test_metrics['test_cls']['accuracy']:.4f}, "
+              f"F1: {test_metrics['test_cls']['f1']:.4f}")
+
+        return method_name, test_metrics
+    except Exception as e:
+        print(f"[{method_name}] Failed with error: {str(e)}")
+        return method_name, None
+
+def run_parallel_single_benchmark():
+    args = parse_arguments()
+    
+    print("\n" + "-"*50)
+    print("Parallel single-run")
+    print("-"*50)
+    
+    with open("config.yaml", "r") as f:
+        base_config = yaml.safe_load(f)
+    
+    MAX_METHODS = 4
+    methods_to_test = args.methods[:MAX_METHODS]
+    
+    if len(args.methods) > MAX_METHODS:
+        print(f"Warning: Maximum {MAX_METHODS} methods allowed. Using first {MAX_METHODS}: {methods_to_test}")
+    
+    FIXED_RUN_ID = args.run_id
+    save_checkpoint = not args.no_checkpoint
+    eval_only = args.eval_only
+    checkpoint_dir = args.checkpoint_dir
+
+    if save_checkpoint or eval_only:
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+    print(f"Dataset: {base_config['dataset']['name']}")
+    print(f"Noise Rate: {base_config['noise']['rate']}")
+    print(f"Methods: {methods_to_test}")
+    print(f"Fixed run_id: {FIXED_RUN_ID} (same seed for all)")
+    if save_checkpoint:
+        print(f"Checkpoints: saving to {checkpoint_dir}/")
+    if eval_only:
+        print(f"Eval-only: loading from {checkpoint_dir}/")
+
+    if torch.cuda.is_available():
+        max_workers = min(2, len(methods_to_test))
+    else:
+        max_workers = min(4, len(methods_to_test))
+
+    print(f"Using {max_workers} parallel workers")
+    print("-"*50)
+
+    start_time = time.time()
+    results = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+
+        future_to_method = {}
+        for method in methods_to_test:
+            ckpt_path = (
+                os.path.join(checkpoint_dir, f"{method}_run_{FIXED_RUN_ID}.pt")
+                if save_checkpoint or eval_only else None
+            )
+            method_run_dir = (
+                os.path.join(checkpoint_dir, f"{method}_run_{FIXED_RUN_ID}")
+                if not eval_only else None
+            )
+            future = executor.submit(
+                run_single_experiment_fixed_seed, method, base_config,
+                FIXED_RUN_ID, checkpoint_path=ckpt_path, eval_only=eval_only,
+                run_dir=method_run_dir,
+            )
+            future_to_method[future] = method
+        
+        for future in as_completed(future_to_method):
+            method_name, test_metrics = future.result()
+            if test_metrics is not None:
+                results[method_name] = test_metrics
+    
+    end_time = time.time()
+    
+    print("\n" + "-"*50)
+    print("Results")
+    print("-"*50)
+    print(f"Total time: {end_time - start_time:.2f}s")
+    print()
+    
+    if results:
+
+        headers = ["Method", "Accuracy", "F1", "Precision", "Recall", "ROC AUC"]
+        rows = []
+        for method in methods_to_test:
+            if method in results:
+                r = results[method]['test_cls']
+                rows.append([
+                    method,
+                    f"{r['accuracy']:.4f}",
+                    f"{r['f1']:.4f}",
+                    f"{r['precision']:.4f}",
+                    f"{r['recall']:.4f}",
+                    f"{r.get('roc_auc', 0.0):.4f}",
+                ])
+            else:
+                rows.append([method, "FAILED", "FAILED", "FAILED", "FAILED", "FAILED"])
+
+        print_table(headers, rows)
+
+        headers_os = ["Method"] + OVERSMOOTHING_KEYS
+        rows_os = []
+        for method in methods_to_test:
+            if method in results:
+                o = results[method]['test_oversmoothing']
+                rows_os.append([
+                    method,
+                    f"{o['NumRank']:.4f}",
+                    f"{o['Erank']:.4f}",
+                    f"{o['EDir']:.4f}",
+                    f"{o['EDir_traditional']:.2e}",
+                    f"{o['EProj']:.4f}",
+                    f"{o['MAD']:.4f}",
+                ])
+            else:
+                rows_os.append([method] + ["Failed"]*6)
+
+        print_table(headers_os, rows_os)
+
+        best_method = max(results.items(), key=lambda x: x[1]['test_cls']['accuracy'])
+        print(f"\nBest method: {best_method[0]} (Accuracy: {best_method[1]['test_cls']['accuracy']:.4f})")
+    else:
+        print("No successful runs.")
+    
+    print("-"*50)
+
+if __name__ == "__main__":
+    run_parallel_single_benchmark()

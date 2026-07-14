@@ -1,0 +1,268 @@
+"""Experiment orchestration — setup pipeline and registry-based dispatch."""
+
+import os
+import time
+
+import numpy as np
+import torch
+from torch_geometric.data import Data
+
+from util.seed import setup_seed_device
+from util.data import load_dataset, ensure_splits, prepare_data_for_method, verify_label_distribution
+from util.noise import noise_operation
+from util.profiling import get_model
+
+from model.registry import discover_trainers, get_trainer
+
+
+def initialize_experiment(config, run_id=1):
+    """Full setup pipeline: seed -> data -> noise -> backbone -> profile.
+
+    Returns a dict with all objects and scalars needed by ``run_experiment``.
+    """
+
+    # Use separate, documented strides so model/split randomness and label-noise
+    # randomness vary reproducibly across runs without sharing the same stream.
+    seed = config.get('seed', 42) + run_id * 100
+    setup_seed_device(seed)
+    device = torch.device(config.get('device', 'cuda') if torch.cuda.is_available() else 'cpu')
+
+    # Dataset
+    normalize = config['dataset'].get('normalize', True)
+    data, num_classes = load_dataset(
+        config['dataset'].get('name', 'cora'),
+        root=config['dataset'].get('root', './data'),
+        normalize=normalize
+    )
+    if not isinstance(data, Data):
+        data = data[0]
+    data = data.to(device)
+    if not hasattr(data, "train_mask"):
+        train_mask, val_mask, test_mask = ensure_splits(data, config["seed"])
+        data.train_mask = train_mask
+        data.val_mask = val_mask
+        data.test_mask = test_mask
+    elif data.train_mask.dim() > 1 and data.train_mask.shape[1] > 1:
+        train_mask = data.train_mask[:,0]
+        val_mask = data.val_mask[:,0]
+        test_mask = data.test_mask[:,0]
+    else:
+        train_mask = data.train_mask
+        val_mask = data.val_mask
+        test_mask = data.test_mask
+
+    data.y_original = data.y.clone()
+
+    noise_type = config['noise'].get('type', 'clean')
+    noise_rate = config['noise'].get('rate', 0)
+    noise_seed = config['noise'].get('seed', 42) + run_id * 10
+
+    # Apply noise once to all train+val labels jointly (single annotation
+    # process), then split back.  This mirrors real-world settings where
+    # noisy labels come from one labelling pass, not two independent ones.
+    trainval_mask = train_mask | val_mask
+    trainval_labels = data.y[trainval_mask]
+    trainval_features = data.x[trainval_mask] if noise_type == 'instance' else None
+    trainval_indices = trainval_mask.nonzero(as_tuple=True)[0]
+    trainval_positions = torch.arange(
+        trainval_labels.numel(), device=trainval_labels.device,
+    )
+
+    noisy_trainval_labels, relative_noisy_trainval_indices = noise_operation(
+        trainval_labels,
+        trainval_features,
+        num_classes,
+        noise_type=noise_type,
+        noise_rate=noise_rate,
+        noise_seed=noise_seed,
+        # noise_operation receives the compact train+val label tensor, so the
+        # deterministic-noise candidate indices must be relative to that tensor
+        # rather than global graph node IDs.
+        idx_train=trainval_positions,
+        debug=True
+    )
+
+    # Write noisy labels back to full graph, then extract train/val portions.
+    data.y_noisy = data.y.clone()
+    data.y_noisy[trainval_mask] = noisy_trainval_labels
+
+    train_indices = train_mask.nonzero(as_tuple=True)[0]
+    val_indices = val_mask.nonzero(as_tuple=True)[0]
+    noisy_train_labels = data.y_noisy[train_mask]
+    noisy_val_labels = data.y_noisy[val_mask]
+
+    # Identify which noisy indices fall in train vs val
+    global_noisy_set = set(trainval_indices[relative_noisy_trainval_indices].cpu().numpy())
+    train_indices_np = train_indices.cpu().numpy()
+    val_indices_np = val_indices.cpu().numpy()
+    relative_noisy_indices = np.array([i for i, idx in enumerate(train_indices_np) if idx in global_noisy_set])
+    relative_noisy_val_indices = np.array([i for i, idx in enumerate(val_indices_np) if idx in global_noisy_set])
+    global_noisy_indices = train_indices[relative_noisy_indices] if len(relative_noisy_indices) > 0 else train_indices[:0]
+    global_noisy_val_indices = val_indices[relative_noisy_val_indices] if len(relative_noisy_val_indices) > 0 else val_indices[:0]
+
+    print(f"Run {run_id}: Applied noise to {len(relative_noisy_indices)} training samples out of {train_mask.sum().item()}")
+    print(f"Run {run_id}: Applied noise to {len(relative_noisy_val_indices)} validation samples out of {val_mask.sum().item()}")
+
+    method = config['training']['method']
+    data_for_training = prepare_data_for_method(data, train_mask, val_mask, test_mask, noisy_train_labels, noisy_val_labels, method)
+
+    verify_label_distribution(data_for_training, train_mask, val_mask, test_mask, run_id, method)
+
+    # Inductive partitioning (if requested)
+    mode = config.get('training', {}).get('mode', 'transductive').lower()
+    train_subgraph = val_subgraph = test_subgraph = None
+    if mode == 'inductive':
+        from util.inductive import partition_graph_inductive
+        train_subgraph, val_subgraph, test_subgraph = partition_graph_inductive(
+            data_for_training,
+        )
+        print(
+            f"Run {run_id}: Inductive mode — train {train_subgraph.num_nodes} nodes / "
+            f"{train_subgraph.edge_index.size(1)} edges, "
+            f"val {val_subgraph.num_nodes} / {val_subgraph.edge_index.size(1)}, "
+            f"test {test_subgraph.num_nodes} / {test_subgraph.edge_index.size(1)}"
+        )
+
+    # backbone model
+    backbone_model = get_model(
+        model_name=config['model'].get('name', 'standard'),
+        in_channels=data.num_features,
+        hidden_channels=config['model'].get('hidden_channels', 64),
+        out_channels=num_classes,
+        mlp_layers=config['model'].get('mlp_layers', 2),
+        train_eps=config['model'].get('train_eps', True),
+        heads=config['model'].get('heads', 8),
+        n_layers=config['model'].get('n_layers', 2),
+        dropout=config['model'].get('dropout', 0.5),
+        self_loop=config['model'].get('self_loop', True),
+        use_residual=config['model'].get('use_residual', False),
+        normalization=config['model'].get('normalization', 'layer'),
+        jk=config['model'].get('jk', 'none'),
+        # gcn_modified-only knobs (ignored by other backbones)
+        pre_linear=config['model'].get('pre_linear', False),
+        lin_res=config['model'].get('lin_res', False),
+        mod_norm=config['model'].get('mod_norm', 'none'),
+        pre_ln=config['model'].get('pre_ln', False),
+        inner_gnn=config['model'].get('inner_gnn', 'gcn')
+    ).to(device)
+
+    compute_info = {
+        'flops_inference': 0,
+        'flops_training_total': 0,
+        'time_training_total': 0.0,
+        'time_inference': 0.0,
+    }
+
+    # training parameters
+    trainer_params = config.get('training', {})
+    lr = float(trainer_params.get('lr', 0.01))
+    weight_decay = float(trainer_params.get('weight_decay', 5e-4))
+    epochs = int(trainer_params.get('epochs', 20))
+    patience = int(trainer_params.get('patience', 100))
+    oversmoothing_every = int(trainer_params.get('oversmoothing_every', 20))
+
+    result = {
+        'device': device,
+        'data': data,
+        'num_classes': num_classes,
+        'train_mask': train_mask,
+        'val_mask': val_mask,
+        'test_mask': test_mask,
+        'train_indices': train_indices,
+        'relative_noisy_indices': relative_noisy_indices,
+        'noisy_train_labels': noisy_train_labels,
+        'global_noisy_indices': global_noisy_indices,
+        'noisy_val_labels': noisy_val_labels,
+        'global_noisy_val_indices': global_noisy_val_indices,
+        'data_for_training': data_for_training,
+        'backbone_model': backbone_model,
+        'lr': lr,
+        'weight_decay': weight_decay,
+        'epochs': epochs,
+        'patience': patience,
+        'method': method,
+        'seed': seed,
+        'oversmoothing_every': oversmoothing_every,
+        'compute_info': compute_info,
+        'get_model': get_model,
+    }
+
+    if train_subgraph is not None:
+        result['train_subgraph'] = train_subgraph
+        result['val_subgraph'] = val_subgraph
+        result['test_subgraph'] = test_subgraph
+
+    return result
+
+def run_experiment(config, run_id=1, *, checkpoint_path=None, eval_only=False,
+                   run_dir=None):
+    """Run a single experiment: setup -> train -> evaluate via registry.
+
+    Parameters
+    ----------
+    checkpoint_path : str or None
+        When provided in normal mode, the trained model state is saved here
+        after ``trainer.run()``.  In *eval_only* mode the checkpoint is loaded
+        and only evaluation is performed (no training).
+    eval_only : bool
+        If *True*, skip training and evaluate from a saved checkpoint.
+        Requires *checkpoint_path* to point at an existing file.
+    run_dir : str or None
+        Directory for per-run training logs and per-epoch checkpoints.
+    """
+    discover_trainers()
+    init_data = initialize_experiment(config, run_id)
+    init_data['run_dir'] = run_dir
+    init_data['_run_id'] = run_id
+    init_data['_config'] = config
+    if run_dir:
+        os.makedirs(run_dir, exist_ok=True)
+    trainer = get_trainer(init_data['method'], init_data, config)
+
+    if eval_only:
+        if checkpoint_path is None:
+            raise ValueError("eval_only=True requires a checkpoint_path")
+        # weights_only=False: checkpoint contains plain dicts (oversmoothing
+        # metrics) in addition to tensor state_dicts.
+        state = torch.load(checkpoint_path, map_location=init_data['device'],
+                           weights_only=False)
+        trainer.load_checkpoint_state(state)
+        flops_result = trainer.profile_flops()
+        init_data['compute_info']['flops_inference'] = flops_result['total_flops']
+        t0 = time.perf_counter()
+        eval_result = trainer.evaluate()
+        time_inference = time.perf_counter() - t0
+        init_data['compute_info']['time_inference'] = round(time_inference, 4)
+        return trainer._make_result(
+            eval_result,
+            state.get('train_oversmoothing', {}),
+            state.get('val_oversmoothing'),
+            reduce=False,
+        )
+
+    result = trainer.run()
+
+    if checkpoint_path is not None:
+        ckpt_dir = os.path.dirname(checkpoint_path)
+        if ckpt_dir:
+            os.makedirs(ckpt_dir, exist_ok=True)
+        # Prefer the best-epoch checkpoint from run_dir if available
+        best_ckpt_src = None
+        if run_dir and trainer.best_epoch is not None:
+            fname = f"epoch_{trainer.best_epoch:03d}_valacc_{trainer.best_val_acc:.4f}.pt"
+            candidate = os.path.join(run_dir, fname)
+            if os.path.exists(candidate):
+                best_ckpt_src = candidate
+        if best_ckpt_src:
+            # Load the per-epoch checkpoint, augment with oversmoothing, re-save
+            state = torch.load(best_ckpt_src, weights_only=False)
+            state['train_oversmoothing'] = result.get('train_oversmoothing', {})
+            state['val_oversmoothing'] = result.get('val_oversmoothing', {})
+            torch.save(state, checkpoint_path)
+        else:
+            state = trainer.get_checkpoint_state()
+            state['train_oversmoothing'] = result.get('train_oversmoothing', {})
+            state['val_oversmoothing'] = result.get('val_oversmoothing', {})
+            torch.save(state, checkpoint_path)
+
+    return result
