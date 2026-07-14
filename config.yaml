@@ -124,7 +124,7 @@ unionnet_params:
 
 gnn_cleaner_params:
   label_propagation_iterations: 5  # reduced from 50
-  similarity_epsilon: 1e-8
+  similarity_epsilon: 1.0e-8
 
 erase_params:
   n_embedding: 32     # reduced from 512

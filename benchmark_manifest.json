@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.2.0",
+  "repository": "https://github.com/GLNBench/GLNBench",
+  "config_format": "glnbench-yaml-v1",
+  "sweep_syntax": "£[value1, value2]",
+  "datasets": [
+    "cora", "citeseer", "pubmed", "amazon-ratings", "tolokers",
+    "roman-empire", "minesweeper", "questions", "dblp",
+    "amazon-computers", "amazon-photo", "blogcatalog", "flickr",
+    "hm-categories", "pokec-regions", "web-topics", "tolokers-2",
+    "city-reviews", "artnet-exp", "web-fraud", "pattern", "cluster",
+    "pascalvoc-sp", "coco-sp"
+  ],
+  "heterophilous_datasets": [
+    "amazon-ratings", "tolokers", "roman-empire", "minesweeper", "questions"
+  ],
+  "large_datasets": [
+    "hm-categories", "pokec-regions", "web-topics", "tolokers-2",
+    "city-reviews", "artnet-exp", "web-fraud", "flickr"
+  ],
+  "methods": [
+    {
+      "id": "standard", "label": "Standard", "batched_training": true,
+      "parameters": {}
+    },
+    {
+      "id": "positive_eigenvalues", "label": "CE+W2 / Positive Eigenvalues", "batched_training": true,
+      "parameters": {
+        "batch_size": {"type": "integer", "default": 32, "min": 1, "description": "NeighborLoader batch size used by the method."}
+      }
+    },
+    {
+      "id": "gcod", "label": "GCOD", "batched_training": true,
+      "parameters": {
+        "batch_size": {"type": "integer", "default": 64, "min": 1, "description": "NeighborLoader batch size."},
+        "uncertainty_lr": {"type": "number", "default": 0.001, "min": 0, "step": 0.001, "description": "Learning rate for per-sample uncertainty."},
+        "kl_start_epoch": {"type": "integer", "default": 2, "min": 0, "description": "Epoch at which KL regularization starts."},
+        "momentum": {"type": "number", "default": 0, "min": 0, "max": 1, "step": 0.1, "description": "Class-centroid momentum."},
+        "temperature": {"type": "number", "default": 1, "min": 0.000001, "step": 0.1, "description": "Distribution-softening temperature."},
+        "similarity_mode": {"type": "enum", "default": "correction", "options": ["correction", "discount"], "description": "Correct labels or discount uncertain samples."}
+      }
+    },
+    {
+      "id": "nrgnn", "label": "NRGNN", "batched_training": false, "large_graph_risk": true,
+      "parameters": {
+        "edge_hidden": {"type": "integer", "default": 16, "min": 1, "description": "Hidden size of the edge predictor."},
+        "n_p": {"type": "integer", "default": 2, "min": 1, "description": "Potential edges considered per node."},
+        "p_u": {"type": "number", "default": 0.7, "min": 0, "max": 1, "step": 0.05, "description": "Unlabelled-node confidence threshold."},
+        "alpha": {"type": "number", "default": 0.05, "min": 0, "step": 0.01, "description": "Edge reconstruction loss weight."},
+        "beta": {"type": "number", "default": 1, "min": 0, "step": 0.1, "description": "Prediction consistency loss weight."},
+        "t_small": {"type": "number", "default": 0.1, "min": 0, "max": 1, "step": 0.05, "description": "Edge connection threshold."},
+        "n_n": {"type": "integer", "default": 5, "min": 1, "description": "Negative samples for edge reconstruction."}
+      }
+    },
+    {
+      "id": "pi_gnn", "label": "PI-GNN", "batched_training": false, "large_graph_risk": true,
+      "parameters": {
+        "start_epoch": {"type": "integer", "default": 1, "min": 0, "description": "Epoch at which mutual-information training starts."},
+        "miself": {"type": "boolean", "default": false, "description": "Use self mutual information."},
+        "norm": {"type": "nullable_number", "default": null, "description": "Optional loss normalization; blank means automatic."},
+        "vanilla": {"type": "boolean", "default": false, "description": "Disable context-aware regularization."}
+      }
+    },
+    {
+      "id": "cr_gnn", "label": "CR-GNN", "batched_training": false,
+      "parameters": {
+        "T": {"type": "number", "default": 2, "min": 0.000001, "step": 0.1, "description": "Similarity-matrix temperature."},
+        "tau": {"type": "number", "default": 0.6, "min": 0.000001, "step": 0.05, "description": "Contrastive-loss temperature."},
+        "p": {"type": "number", "default": 0.9, "min": 0, "max": 1, "step": 0.05, "description": "Low-similarity filtering threshold."},
+        "alpha": {"type": "number", "default": 0.2, "min": 0, "step": 0.05, "description": "Contrastive loss weight."},
+        "beta": {"type": "number", "default": 0.9, "min": 0, "step": 0.05, "description": "Cross-space consistency weight."},
+        "pr": {"type": "number", "default": 0.3, "min": 0, "max": 1, "step": 0.05, "description": "Edge-dropout and feature-masking probability."}
+      }
+    },
+    {
+      "id": "community_defense", "label": "Community Defense", "batched_training": true,
+      "parameters": {
+        "community_method": {"type": "enum", "default": "louvain", "options": ["louvain", "spectral"], "description": "Community detection algorithm."},
+        "num_communities": {"type": "nullable_integer", "default": null, "min": 1, "description": "Community count; blank enables automatic detection."},
+        "lambda_comm": {"type": "number", "default": 1, "min": 0, "step": 0.1, "description": "Community auxiliary-loss weight."},
+        "pos_weight": {"type": "number", "default": 2, "min": 0, "step": 0.1, "description": "Same-community pair weight."},
+        "neg_weight": {"type": "number", "default": 2, "min": 0, "step": 0.1, "description": "Cross-community pair weight."},
+        "margin": {"type": "number", "default": 1.5, "min": 0, "step": 0.1, "description": "Minimum embedding distance for negative pairs."},
+        "num_neg_samples": {"type": "integer", "default": 3, "min": 1, "description": "Negative samples per node."}
+      }
+    },
+    {
+      "id": "rtgnn", "label": "RTGNN", "batched_training": false,
+      "parameters": {
+        "edge_hidden": {"type": "integer", "default": 16, "min": 1, "description": "Hidden size of the edge predictor."},
+        "co_lambda": {"type": "number", "default": 0.1, "min": 0, "step": 0.05, "description": "Intra-view regularization weight."},
+        "alpha": {"type": "number", "default": 0.3, "min": 0, "step": 0.05, "description": "Reconstruction loss weight."},
+        "th": {"type": "number", "default": 0.8, "min": 0, "max": 1, "step": 0.05, "description": "Pseudo-label confidence threshold."},
+        "K": {"type": "integer", "default": 3, "min": 1, "description": "KNN candidates for edge augmentation."},
+        "tau": {"type": "number", "default": 0.05, "min": 0, "max": 1, "step": 0.01, "description": "Minimum edge similarity."},
+        "n_neg": {"type": "integer", "default": 10, "min": 1, "description": "Negative samples per node."}
+      }
+    },
+    {
+      "id": "graphcleaner", "label": "GraphCleaner", "batched_training": true,
+      "parameters": {
+        "k": {"type": "integer", "default": 5, "min": 1, "description": "Neighborhood hops used by the detector."},
+        "sample_rate": {"type": "number", "default": 0.5, "min": 0, "max": 1, "step": 0.05, "description": "Synthetic mislabel sampling fraction."},
+        "max_iter_classifier": {"type": "integer", "default": 50, "min": 1, "description": "Maximum detector-classifier iterations."},
+        "held_split": {"type": "string", "default": "valid", "description": "Held-out split used for transition estimation."}
+      }
+    },
+    {
+      "id": "unionnet", "label": "UnionNET", "batched_training": true,
+      "parameters": {
+        "k": {"type": "integer", "default": 10, "min": 1, "description": "Nearest neighbors in the support set."},
+        "alpha": {"type": "number", "default": 0.5, "min": 0, "step": 0.05, "description": "Reweighted loss coefficient."},
+        "beta": {"type": "number", "default": 1, "min": 0, "step": 0.1, "description": "KL-divergence regularization weight."},
+        "feat_norm": {"type": "boolean", "default": true, "description": "Normalize node features."}
+      }
+    },
+    {
+      "id": "gnn_cleaner", "label": "GNN-Cleaner", "batched_training": false,
+      "parameters": {
+        "label_propagation_iterations": {"type": "integer", "default": 5, "min": 1, "description": "Label-propagation iterations."},
+        "similarity_epsilon": {"type": "number", "default": 0.00000001, "min": 0, "step": 0.00000001, "description": "Numerical-stability epsilon."}
+      }
+    },
+    {
+      "id": "erase", "label": "ERASE", "batched_training": false, "width_sensitive": true,
+      "parameters": {
+        "n_embedding": {"type": "integer", "default": 32, "min": 1, "description": "Self-supervised embedding dimension."},
+        "n_heads": {"type": "integer", "default": 8, "min": 1, "description": "Attention heads in the first GAT layer."},
+        "use_layer_norm": {"type": "boolean", "default": false, "description": "Apply layer normalization."},
+        "use_residual": {"type": "boolean", "default": false, "description": "Enable residual connections."},
+        "use_residual_linear": {"type": "boolean", "default": false, "description": "Use a learned residual projection."},
+        "gam1": {"type": "number", "default": 1, "min": 0, "step": 0.1, "description": "MCR2 compression coefficient."},
+        "gam2": {"type": "number", "default": 2, "min": 0, "step": 0.1, "description": "MCR2 discrimination coefficient."},
+        "eps": {"type": "number", "default": 0.05, "min": 0.00000001, "step": 0.01, "description": "Covariance-stabilization constant."},
+        "alpha": {"type": "number", "default": 0.6, "min": 0, "max": 1, "step": 0.05, "description": "Label-propagation neighbor influence."},
+        "beta": {"type": "number", "default": 0.6, "min": 0, "max": 1, "step": 0.05, "description": "Denoised-label blending weight."},
+        "T": {"type": "integer", "default": 3, "min": 1, "description": "Label-propagation depth."}
+      }
+    },
+    {
+      "id": "gnnguard", "label": "GNNGuard", "batched_training": false, "requires_edge_weights": true,
+      "parameters": {
+        "P0": {"type": "number", "default": 0.5, "min": 0, "max": 1, "step": 0.05, "description": "Edge-pruning similarity threshold."},
+        "K": {"type": "integer", "default": 2, "min": 1, "description": "Number of GNNGuard layers."},
+        "D2": {"type": "integer", "default": 16, "min": 1, "description": "Hidden embedding dimension."},
+        "attention": {"type": "boolean", "default": true, "description": "Enable attention-based edge reweighting."}
+      }
+    }
+  ],
+  "backbones": [
+    {"id": "gcn", "label": "GCN", "edge_weights": true},
+    {"id": "gat", "label": "GAT", "edge_weights": true},
+    {"id": "gatv2", "label": "GATv2", "edge_weights": true},
+    {"id": "gin", "label": "GIN", "edge_weights": false},
+    {"id": "gps", "label": "GPS", "edge_weights": false},
+    {
+      "id": "gcn_modified",
+      "label": "Modified GNN / tunedGNN",
+      "edge_weights": true,
+      "variants": [
+        {"id": "gcn", "label": "GCN*", "edge_weights": true},
+        {"id": "gat", "label": "GAT*", "edge_weights": false},
+        {"id": "sage", "label": "GraphSAGE*", "edge_weights": false}
+      ]
+    }
+  ],
+  "noise_types": [
+    {"id": "clean", "label": "Clean (no corruption)"},
+    {"id": "uniform_simple", "label": "Coin-flip uniform"},
+    {"id": "uniform", "label": "Uniform"},
+    {"id": "random", "label": "Random transition"},
+    {"id": "pair", "label": "Pair"},
+    {"id": "random_pair", "label": "Random pair"},
+    {"id": "flip", "label": "Chain flip"},
+    {"id": "uniform_mix", "label": "Uniform mix"},
+    {"id": "deterministic", "label": "Deterministic exact-count"},
+    {"id": "instance", "label": "Instance-dependent"}
+  ],
+  "modes": ["transductive", "inductive"],
+  "samplers": ["neighbor", "cluster", "graphsaint", "random_node"],
+  "normalizations": ["none", "batch", "layer", "pair"],
+  "jumping_knowledge": ["none", "cat", "max"],
+  "devices": ["cpu", "cuda"],
+  "defaults": {
+    "seed": 42, "device": "cpu", "num_runs": 1,
+    "dataset": {"name": "cora", "root": "data", "normalize": true},
+    "noise": {"type": "uniform", "rate": 0.2, "seed": 42},
+    "model": {"name": "gcn", "inner_gnn": "gcn", "hidden_channels": 16, "n_layers": 2, "dropout": 0.2, "self_loop": true, "use_residual": false, "jk": "none", "normalization": "layer"},
+    "training": {"method": "standard", "lr": 0.01, "weight_decay": 0.0005, "epochs": 200, "patience": 20, "early_stopping_metric": "val_acc", "oversmoothing_every": 20, "mode": "transductive"}
+  }
+}

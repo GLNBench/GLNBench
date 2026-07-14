@@ -41,6 +41,21 @@ A benchmarking framework for systematically evaluating GNN robustness strategies
 
 ## Quick Start
 
+### Browser experiment builder
+
+Use the privacy-preserving [GLNBench Experiment Builder](https://glnbench.github.io/website/builder.html)
+to select a supported dataset, noise model, backbone, robustness method, and
+training settings. It validates known compatibility constraints and produces a
+downloadable `config.yaml`, exact run commands, and shareable configuration
+links. The builder runs entirely in the browser and does not submit experiments
+or configuration data to a server.
+
+For a zero-setup, CPU-friendly demonstration, open
+[`examples/quickstart.ipynb`](examples/quickstart.ipynb) in Google Colab. Full
+benchmark sweeps should still be run in a controlled local, server, or cluster
+environment.
+
+
 ```bash
 # 1. Install dependencies
 python3 -m pip install -r requirements.txt
@@ -367,7 +382,7 @@ gcod_params:
   batch_size: 64                # Mini-batch size for NeighborLoader
   uncertainty_lr: 0.001         # Learning rate for per-sample uncertainty parameters
   kl_start_epoch: 2             # Epoch to activate the KL term (delayed for stability)
-  momentum: 0.9                 # Class-centroid momentum (use 0 for margin-based correction)
+  momentum: 0                   # Release default: no centroid momentum in correction mode
   temperature: 1.0             # Softening temperature for the L3 distribution loss
   similarity_mode: correction   # 'correction' (label correction via centroids) or 'discount'
 ```
@@ -376,18 +391,18 @@ gcod_params:
 ```yaml
 nrgnn_params:
   edge_hidden: 16   # Hidden dim in edge predictor
-  n_p: 10           # Max potential edges per node from most similar nodes
+  n_p: 2            # Release default (original implementation: 10)
   p_u: 0.7          # Confidence threshold for unlabeled node selection
   alpha: 0.05       # Edge reconstruction loss weight
   beta: 1.0         # Consistency loss weight (main model vs predictor on confident nodes)
   t_small: 0.1      # Connection threshold for edge predictor
-  n_n: 50           # Negative samples for edge reconstruction
+  n_n: 5            # Release default (original implementation: 50)
 ```
 
 #### PI-GNN
 ```yaml
 pi_gnn_params:
-  start_epoch: 200   # Epoch to begin MI regularization
+  start_epoch: 1     # Release default; must remain below training.epochs
   miself: false       # Use self mutual information in contextual loss
   norm: null          # Normalization factor in loss computation
   vanilla: false      # Disable context-aware regularization
@@ -423,9 +438,9 @@ rtgnn_params:
   co_lambda: 0.1     # Intra-view regularization weight
   alpha: 0.3         # Reconstruction loss weight
   th: 0.8            # Pseudo-label confidence threshold
-  K: 50              # KNN candidates for edge augmentation
+  K: 3               # Release default (original implementation: 50)
   tau: 0.05          # Min similarity for edge filtering
-  n_neg: 100         # Negative samples per node for reconstruction
+  n_neg: 10          # Release default (original implementation: 100)
 ```
 
 #### GraphCleaner
@@ -433,7 +448,7 @@ rtgnn_params:
 graphcleaner_params:
   k: 5                      # Neighbourhood hops in mislabel detector
   sample_rate: 0.5           # Fraction of nodes for synthetic mislabel generation
-  max_iter_classifier: 5000  # Max iterations for binary classifier training
+  max_iter_classifier: 50    # Release default (original implementation: 5000)
   held_split: valid          # Split for noise transition matrix estimation
 ```
 
@@ -449,14 +464,14 @@ unionnet_params:
 #### GNN Cleaner
 ```yaml
 gnn_cleaner_params:
-  label_propagation_iterations: 50  # LP iterations for label correction
-  similarity_epsilon: 1e-8          # Numerical stability constant
+  label_propagation_iterations: 5    # Release default (original implementation: 50)
+  similarity_epsilon: 1.0e-8         # Numerical stability constant
 ```
 
 #### ERASE
 ```yaml
 erase_params:
-  n_embedding: 512      # Embedding dimension
+  n_embedding: 32       # Release default (original implementation: 512)
   n_heads: 8            # Attention heads in first GAT layer
   use_layer_norm: false  # Apply layer normalization
   use_residual: false    # Residual connections
@@ -886,9 +901,72 @@ class MyMethodTrainer(BaseTrainer):
         return result
 ```
 
-### Step 3: Use it
+### Step 3: Add it to the benchmark manifest
 
-Set `training.method: my_method` in `config.yaml` and run. No other wiring needed -- both registries auto-discover files in their directories.
+Both Python registries auto-discover the new files, but public benchmark
+capabilities are declared separately in `benchmark_manifest.json`. Add one
+entry to the `methods` array:
+
+```json
+{
+  "id": "my_method",
+  "label": "My Method",
+  "batched_training": false,
+  "parameters": {
+    "temperature": {
+      "type": "number",
+      "default": 1.0,
+      "min": 0.000001,
+      "step": 0.1,
+      "description": "Softening temperature used by My Method."
+    }
+  }
+}
+```
+
+The `id` must exactly match the value used by both `@register_helper` and
+`@register`. Set `batched_training` from the helper's actual
+`supports_batched_training()` behavior. Add applicable capability metadata
+such as `large_graph_risk`, `width_sensitive`, or
+`requires_edge_weights` so the website builder can issue accurate warnings.
+Method-specific configuration remains under a `my_method_params` mapping in
+YAML. Declare every release-default parameter in the manifest with its type,
+default, description, and applicable range or choices. The builder then creates
+the corresponding controls and YAML automatically. Use an empty
+`"parameters": {}` object only when the method truly has no additional
+settings; experimental parameters can still be supplied through the builder's
+advanced JSON override.
+
+Add the same defaults under `my_method_params` in the release `config.yaml`:
+
+```yaml
+my_method_params:
+  temperature: 1.0
+```
+
+The manifest test compares these mappings exactly, so a changed default must be
+updated in both places in the same pull request.
+
+The manifest synchronization tests compare the manifest with the implemented
+method, dataset, backbone, noise, and modified-backbone registries. A pull
+request that registers a method but omits its manifest entry will fail these
+tests.
+
+### Step 4: Test and use it
+
+```bash
+python3 -m pytest tests/test_benchmark_manifest.py
+./test.sh -k my_method
+```
+
+Then set `training.method: my_method` in `config.yaml` and run the benchmark.
+
+After the code and manifest reach the GLNBench `main` branch, the website's
+scheduled or manually dispatched **Sync benchmark manifest** workflow downloads
+the canonical manifest, regenerates only `builder-manifest.js`, and opens a
+website pull request. Review and merge that pull request to publish the method
+in the Experiment Builder dropdown. No personal token or manual editing of the
+generated JavaScript is required.
 
 ---
 

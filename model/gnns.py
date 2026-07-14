@@ -14,6 +14,9 @@ from torch.nn import (
 from torch_geometric.nn import GINEConv, GPSConv
 
 
+SUPPORTED_GCN_MODIFIED_INNER_GNNS = ("gcn", "gat", "sage")
+
+
 def _get_edge_attr(data) -> torch.Tensor | None:
     """Extract scalar edge weights from data and unsqueeze (E,) -> (E,1) to match edge_dim=1."""
     edge_weight = getattr(data, 'edge_weight', None)
@@ -734,6 +737,12 @@ class GCN_modified(nn.Module):
         self.bn = norm in ('bn', 'batch', 'batchnorm', 'batchnorm1d')
         self.jk = _flag(jk)
         self.inner_gnn = str(inner_gnn).lower()
+        if self.inner_gnn not in SUPPORTED_GCN_MODIFIED_INNER_GNNS:
+            supported = ", ".join(SUPPORTED_GCN_MODIFIED_INNER_GNNS)
+            raise ValueError(
+                f"Unknown GCN_modified inner_gnn '{inner_gnn}'. "
+                f"Use one of: {supported}."
+            )
 
         self.local_convs = nn.ModuleList()
         self.lins = nn.ModuleList()
