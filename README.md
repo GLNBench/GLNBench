@@ -3,7 +3,7 @@
 A benchmarking framework for systematically evaluating GNN robustness strategies under label noise. It benchmarks 12 robustness methods plus a Standard baseline under standardized conditions across 24 datasets with 9 noise types, enabling fair and reproducible comparisons. The framework measures classification performance, oversmoothing behaviour, and computational cost in a unified pipeline.
 
 <p align="center">
-  <img src="images/teaser-control-flow.webp" alt="GLNBench code control flow from YAML configuration and sweep dispatch through graph preparation, noise injection, training, checkpoint restoration, clean-test evaluation, and result metrics" width="100%">
+  <img src="images/teaser-control-flow.svg" alt="GLNBench two-row code control flow from YAML configuration and sweep dispatch through graph preparation, noise injection, training, checkpoint restoration, clean-test evaluation, and result metrics" width="100%">
 </p>
 
 ## Table of Contents

@@ -1,0 +1,188 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100" role="img" aria-labelledby="title desc">
+  <title id="title">GLNBench code control flow</title>
+  <desc id="desc">Two-row diagram showing configuration, sweep expansion and fault-isolated dispatch, followed by graph preparation, training, checkpoint restoration, clean-label evaluation and result generation.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f8fafb}.panel{fill:#fff;stroke:#cbd5da;stroke-width:2}.focus{fill:#effaf8;stroke:#0f8f83;stroke-width:2.4}
+      .result{fill:#fff;stroke:#9bb3bb;stroke-width:2}.ink{fill:#10233f}.muted{fill:#526571}.teal{fill:#0f8f83}.coral{fill:#e45b4d}
+      .blue{fill:#3878cf}.line{fill:none;stroke:#0f8f83;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+      .thin{fill:none;stroke:#7b8c94;stroke-width:2}.dash{fill:none;stroke:#9aabb2;stroke-width:2;stroke-dasharray:7 7}
+      .title{font:700 48px system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.3px}.lane{font:700 17px system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:2.8px}
+      .head{font:750 25px system-ui,-apple-system,"Segoe UI",sans-serif}.body{font:500 18px system-ui,-apple-system,"Segoe UI",sans-serif}
+      .small{font:500 15px system-ui,-apple-system,"Segoe UI",sans-serif}.mono{font:500 17px ui-monospace,SFMono-Regular,Consolas,monospace}
+      .code{font:650 22px ui-monospace,SFMono-Regular,Consolas,monospace}.num{font:750 20px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#fff}
+    </style>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1 1l10 5-10 5z" fill="#0f8f83"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#10233f" flood-opacity=".09"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="1600" height="1100" rx="24"/>
+  <text class="title ink" x="800" y="68" text-anchor="middle">GLNBench — Code Control Flow</text>
+  <text class="lane teal" x="64" y="112">ORCHESTRATE THE SWEEP</text>
+
+  <!-- top row -->
+  <g filter="url(#shadow)">
+    <rect class="panel" x="64" y="132" width="420" height="300" rx="18"/>
+    <rect class="panel" x="590" y="132" width="420" height="300" rx="18"/>
+    <rect class="panel" x="1116" y="132" width="420" height="300" rx="18"/>
+  </g>
+
+  <!-- 1 config -->
+  <circle class="ink" cx="98" cy="171" r="20"/><text class="num" x="98" y="178" text-anchor="middle">1</text>
+  <text class="head ink" x="132" y="179">CONFIGURE</text>
+  <text class="small muted" x="98" y="210">one readable YAML specification</text>
+  <rect x="98" y="232" width="352" height="164" rx="12" fill="#f5f8f9" stroke="#aebcc2" stroke-width="1.5"/>
+  <text class="mono teal" x="120" y="265">dataset:  cora</text>
+  <text class="mono ink" x="120" y="296">noise:    uniform · 0.3</text>
+  <text class="mono ink" x="120" y="327">backbone: gcn</text>
+  <text class="mono ink" x="120" y="358">method:   nrgnn</text>
+  <text class="mono muted" x="120" y="383">runs: 3 · mode: transductive</text>
+
+  <!-- arrow 1 -->
+  <path class="line" d="M500 282h70" marker-end="url(#arrow)"/>
+
+  <!-- 2 expand -->
+  <circle class="ink" cx="624" cy="171" r="20"/><text class="num" x="624" y="178" text-anchor="middle">2</text>
+  <text class="head ink" x="658" y="179">EXPAND</text>
+  <text class="small muted" x="624" y="210">Cartesian product of every sweep value</text>
+  <g transform="translate(650 247)">
+    <text class="small teal" x="0" y="0">seed</text><text class="small teal" x="82" y="0">noise</text>
+    <text class="small teal" x="172" y="0">method</text><text class="small teal" x="276" y="0">h-dim</text>
+    <g class="thin">
+      <path d="M10 30h286M10 79h286M10 128h286"/>
+      <path d="M16 25v110M102 25v110M201 25v110M296 25v110"/>
+    </g>
+    <g class="teal">
+      <rect x="5" y="23" width="22" height="22" rx="4"/><rect x="5" y="72" width="22" height="22" rx="4"/><rect x="5" y="121" width="22" height="22" rx="4"/>
+      <rect x="190" y="23" width="22" height="22" rx="4"/><rect x="190" y="72" width="22" height="22" rx="4"/><rect x="190" y="121" width="22" height="22" rx="4"/>
+      <rect x="285" y="23" width="22" height="22" rx="4"/><rect x="285" y="72" width="22" height="22" rx="4"/><rect x="285" y="121" width="22" height="22" rx="4"/>
+    </g>
+    <g fill="#b9e5df" stroke="#0f8f83" stroke-width="1.5">
+      <rect x="91" y="23" width="22" height="22" rx="4"/><rect x="91" y="72" width="22" height="22" rx="4"/><rect x="91" y="121" width="22" height="22" rx="4"/>
+    </g>
+  </g>
+
+  <!-- arrow 2 -->
+  <path class="line" d="M1026 282h70" marker-end="url(#arrow)"/>
+
+  <!-- 3 dispatch -->
+  <circle class="ink" cx="1150" cy="171" r="20"/><text class="num" x="1150" y="178" text-anchor="middle">3</text>
+  <text class="head ink" x="1184" y="179">DISPATCH</text>
+  <text class="small muted" x="1150" y="210">resume · isolate · timeout</text>
+  <g transform="translate(1152 238)">
+    <rect x="0" y="0" width="225" height="48" rx="9" fill="#f5f8f9" stroke="#8fa2aa" stroke-width="1.5"/>
+    <rect x="0" y="63" width="225" height="48" rx="9" fill="#f5f8f9" stroke="#8fa2aa" stroke-width="1.5"/>
+    <rect x="0" y="126" width="225" height="48" rx="9" fill="#f5f8f9" stroke="#8fa2aa" stroke-width="1.5"/>
+    <rect class="ink" x="12" y="10" width="29" height="29" rx="5"/><rect class="ink" x="12" y="73" width="29" height="29" rx="5"/><rect class="ink" x="12" y="136" width="29" height="29" rx="5"/>
+    <text class="small ink" x="55" y="30">Job 0001 · isolated</text><text class="small ink" x="55" y="93">Job 0002 · isolated</text><text class="small ink" x="55" y="156">Job NNNN · isolated</text>
+    <path class="dash" d="M249 6c42 23 42 138 0 160"/>
+    <text class="small teal" x="270" y="91">resume</text>
+  </g>
+  <g transform="translate(1420 267)">
+    <path d="M29 0l27 12v31c0 22-13 42-27 50C15 85 2 65 2 43V12z" fill="#e45b4d"/>
+    <circle cx="29" cy="42" r="16" fill="none" stroke="#fff" stroke-width="4"/>
+    <path d="M29 30v13l9 6M23 19h12" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <text class="small coral" x="29" y="116" text-anchor="middle">timeout</text>
+  </g>
+
+  <!-- connector between lanes -->
+  <path class="line" d="M1326 432v58H24v68h12" marker-end="url(#arrow)"/>
+  <rect x="674" y="467" width="252" height="42" rx="21" fill="#effaf8" stroke="#0f8f83" stroke-width="1.5"/>
+  <text class="small teal" x="800" y="493" text-anchor="middle">for each isolated configuration</text>
+  <text class="lane teal" x="64" y="538">RUN ONE EXPERIMENT</text>
+
+  <!-- bottom panels -->
+  <g filter="url(#shadow)">
+    <rect class="panel" x="44" y="558" width="250" height="365" rx="18"/>
+    <rect class="focus" x="326" y="558" width="380" height="365" rx="18"/>
+    <rect class="panel" x="738" y="558" width="238" height="365" rx="18"/>
+    <rect class="panel" x="1008" y="558" width="248" height="365" rx="18"/>
+    <rect class="panel" x="1288" y="558" width="268" height="365" rx="18"/>
+  </g>
+
+  <!-- 4 prepare -->
+  <circle class="ink" cx="76" cy="595" r="19"/><text class="num" x="76" y="602" text-anchor="middle">4</text>
+  <text class="head ink" x="108" y="603">PREPARE</text>
+  <text class="small muted" x="70" y="638">load graph + fixed splits</text>
+  <text class="small muted" x="70" y="661">noise train + validation</text>
+  <g transform="translate(72 702)">
+    <g class="thin"><path d="M20 66L68 22l51 34 48-30M20 66l51 50 48-60 48 57M68 22l3 94M119 56l48 57"/></g>
+    <circle class="teal" cx="20" cy="66" r="11"/><circle class="teal" cx="68" cy="22" r="11"/><circle class="coral" cx="119" cy="56" r="11"/>
+    <circle class="teal" cx="71" cy="116" r="11"/><circle class="coral" cx="167" cy="26" r="11"/><circle class="blue" cx="167" cy="113" r="11"/>
+  </g>
+  <g transform="translate(72 858)"><circle class="teal" cx="5" cy="0" r="6"/><text class="small muted" x="17" y="5">train</text><circle class="coral" cx="78" cy="0" r="6"/><text class="small muted" x="90" y="5">val</text><circle class="blue" cx="139" cy="0" r="6"/><text class="small muted" x="151" y="5">test</text></g>
+
+  <path class="line" d="M298 741h20" marker-end="url(#arrow)"/>
+
+  <!-- 5 train -->
+  <circle class="ink" cx="360" cy="595" r="19"/><text class="num" x="360" y="602" text-anchor="middle">5</text>
+  <text class="head ink" x="392" y="603">TRAIN + VALIDATE</text>
+  <text class="small muted" x="360" y="638">backbone + robustness method</text>
+  <rect x="360" y="674" width="138" height="98" rx="12" fill="#fff" stroke="#0f8f83" stroke-width="1.8"/>
+  <text class="small ink" x="429" y="701" text-anchor="middle">GNN backbone</text>
+  <rect x="383" y="718" width="92" height="34" rx="7" fill="#effaf8" stroke="#0f8f83"/>
+  <text class="small teal" x="429" y="741" text-anchor="middle">Layer 1 … L</text>
+  <text class="head ink" x="517" y="731" text-anchor="middle">+</text>
+  <rect x="538" y="674" width="134" height="98" rx="12" fill="#fff" stroke="#0f8f83" stroke-width="1.8"/>
+  <text class="small ink" x="605" y="701" text-anchor="middle">robust method</text>
+  <circle cx="580" cy="737" r="8" fill="#b9e5df" stroke="#0f8f83"/><circle cx="630" cy="727" r="8" fill="#b9e5df" stroke="#0f8f83"/><circle cx="612" cy="752" r="8" fill="#b9e5df" stroke="#0f8f83"/>
+  <path class="thin" d="M580 737l50-10-18 25-32-15"/>
+  <path class="line" d="M409 828c25-34 82-37 115-8" marker-end="url(#arrow)"/>
+  <path class="line" d="M625 840c-23 39-82 46-119 17" marker-end="url(#arrow)"/>
+  <rect x="373" y="808" width="102" height="45" rx="10" fill="#fff" stroke="#0f8f83" stroke-width="1.5"/><text class="small teal" x="424" y="837" text-anchor="middle">TRAIN</text>
+  <rect x="555" y="821" width="116" height="45" rx="10" fill="#fff" stroke="#0f8f83" stroke-width="1.5"/><text class="small teal" x="613" y="850" text-anchor="middle">VALIDATE</text>
+  <rect x="452" y="870" width="116" height="38" rx="9" fill="#fff4f1" stroke="#e45b4d" stroke-width="1.5"/><text class="small coral" x="510" y="895" text-anchor="middle">EARLY STOP</text>
+
+  <path class="line" d="M710 741h20" marker-end="url(#arrow)"/>
+
+  <!-- 6 restore -->
+  <circle class="ink" cx="770" cy="595" r="19"/><text class="num" x="770" y="602" text-anchor="middle">6</text>
+  <text class="head ink" x="802" y="603">RESTORE</text>
+  <text class="small muted" x="770" y="638">best validation checkpoint</text>
+  <path d="M799 688h88l39 39v128H799z" fill="#fff" stroke="#0f8f83" stroke-width="2"/>
+  <path d="M887 688v39h39" fill="#b9e5df" stroke="#0f8f83" stroke-width="2"/>
+  <path d="M863 743l10 21 23 3-17 16 4 23-20-11-21 11 4-23-17-16 23-3z" class="teal"/>
+  <text class="mono ink" x="862" y="839" text-anchor="middle">best_run_N.pt</text>
+  <text class="small muted" x="857" y="879" text-anchor="middle">restore before test</text>
+
+  <path class="line" d="M980 741h20" marker-end="url(#arrow)"/>
+
+  <!-- 7 evaluate -->
+  <circle class="ink" cx="1040" cy="595" r="19"/><text class="num" x="1040" y="602" text-anchor="middle">7</text>
+  <text class="head ink" x="1072" y="603">EVALUATE</text>
+  <text class="small muted" x="1040" y="638">clean test labels only</text>
+  <g transform="translate(1050 690)">
+    <g class="thin"><path d="M18 54L65 18l54 25 45-12M18 54l38 58 63-69 45 74M65 18l-9 94M119 43l45 74"/></g>
+    <circle class="blue" cx="18" cy="54" r="11"/><circle class="blue" cx="65" cy="18" r="11"/><circle class="blue" cx="119" cy="43" r="11"/>
+    <circle class="blue" cx="56" cy="112" r="11"/><circle class="blue" cx="164" cy="31" r="11"/><circle class="blue" cx="164" cy="117" r="11"/>
+  </g>
+  <circle class="teal" cx="1132" cy="861" r="34"/><path d="M1116 861l11 12 23-29" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path class="line" d="M1260 741h20" marker-end="url(#arrow)"/>
+
+  <!-- results -->
+  <text class="head ink" x="1322" y="603">RESULTS</text>
+  <text class="small muted" x="1322" y="638">one comparable record</text>
+  <g transform="translate(1320 675)">
+    <rect class="result" x="0" y="0" width="204" height="50" rx="10"/><rect class="teal" x="17" y="25" width="8" height="14"/><rect class="teal" x="31" y="16" width="8" height="23"/><rect class="teal" x="45" y="7" width="8" height="32"/><text class="small ink" x="70" y="31">Classification</text>
+    <rect class="result" x="0" y="65" width="204" height="50" rx="10"/><path d="M16 97l13-19 13 14 14-22 13 17" fill="none" stroke="#7759b7" stroke-width="3"/><text class="small ink" x="82" y="96">Oversmoothing</text>
+    <rect class="result" x="0" y="130" width="204" height="50" rx="10"/><circle class="teal" cx="35" cy="155" r="18"/><text x="35" y="160" font-family="system-ui" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">CO₂</text><text class="small ink" x="70" y="161">Compute + carbon</text>
+    <rect class="result" x="0" y="195" width="204" height="50" rx="10"/><path d="M18 207h31v28H18z" fill="#fff" stroke="#10233f" stroke-width="1.5"/><text class="small ink" x="66" y="226">experiment.json</text>
+  </g>
+
+  <!-- code path footer -->
+  <rect x="210" y="976" width="1180" height="82" rx="16" fill="#fff" stroke="#b5c2c7" stroke-width="2"/>
+  <rect x="242" y="997" width="45" height="40" rx="8" fill="#effaf8" stroke="#0f8f83" stroke-width="1.5"/>
+  <text class="code teal" x="264" y="1025" text-anchor="middle">&lt;/&gt;</text>
+  <text class="code ink" x="330" y="1025">main.py</text>
+  <path class="line" d="M442 1017h65" marker-end="url(#arrow)"/>
+  <text class="code ink" x="548" y="1025">run_experiment()</text>
+  <path class="line" d="M768 1017h65" marker-end="url(#arrow)"/>
+  <text class="code ink" x="873" y="1025">TrainingLoop.run()</text>
+  <path class="line" d="M1120 1017h65" marker-end="url(#arrow)"/>
+  <text class="code ink" x="1225" y="1025">evaluate()</text>
+</svg>
