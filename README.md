@@ -1082,4 +1082,5 @@ Tests use 5 epochs on Cora with reduced hyperparameters for speed. The test suit
 
 ## Author
 
-Farooq Ahmad Wani, Antonio Purificato, Maria Sofia Bucarelli, Andrea Giuseppe Di Francesco, Oleksandr Pryymak, Fabrizio Silvestri
+Farooq Ahmad Wani, Antonio Purificato, Maria Sofia Bucarelli, Andrea Giuseppe Di Francesco, 
+Michael Corelli, Oleksandr Pryymak, Fabrizio Silvestri
