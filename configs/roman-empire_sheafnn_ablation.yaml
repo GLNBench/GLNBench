@@ -1,0 +1,49 @@
+seed: 42
+device: cuda
+num_runs: 3
+# save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
+
+dataset:
+  name: roman-empire  # roman-empire is a heterophilous dataset
+  root: data
+  normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
+
+noise:
+  type: uniform          # uniform, gaussian, or feature_mask
+  rate: £[0.0, 0.15, 0.3, 0.45]  # noise rates to test
+  seed: 42
+
+model:
+  name: SheafNN
+  hidden_channels: 512
+  n_layers: 10
+  dropout_in: 0.6
+  dropout: 0.5
+  normalization: batch
+  stalk : 1
+  non_linear: False
+  ego: False
+  attention : False
+  learned_residual: True
+
+
+training:
+  method: SheafNN_Trainer #sheaf_graphcleaner
+  checkpoint_every_epoch: False
+  lr: 0.001
+  weight_decay: 0.0
+  epochs: 3500         # keep low for local runs
+  patience: 1000
+  oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics
+  mode: transductive   # transductive or inductive
+  # batch_size: 512    # uncomment to enable mini-batch processing
+  # sampler: neighbor   # neighbor, cluster, graphsaint, or random_node
+  # sampler_params:     # sampler-specific parameters
+  #   num_neighbors: [15, 10]
+
+graphcleaner_params:
+  k: 5
+  sample_rate: 0.5
+  max_iter_classifier: 1000  # reduced from 5000
+  held_split: non_valid
+

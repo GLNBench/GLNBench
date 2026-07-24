@@ -320,6 +320,53 @@ class MethodHelper(ABC):
 
         return all_preds
 
+    def get_probabilities_batched(self, state: dict, loaders, data) -> torch.Tensor:
+        """Return class probabilities (or logits) for all nodes.
+
+        Default: primary model forward -> softmax.
+        Override for methods with custom inference paths.
+
+        Args:
+            state: Method state dict.
+            loaders: GraphLoaders from util.graph_sampling.
+            data: PyG Data object.
+
+        Returns:
+            Tensor[num_nodes, num_classes] of probabilities.
+        """
+
+        from util.graph_sampling import get_seed_indices, get_global_ids
+        import torch.nn.functional as F
+
+        model = state['models'][0]
+        device = state.get('device', next(model.parameters()).device)
+
+        model.eval()
+        
+        # 1 & 2. Inizializziamo un tensore float 2D (num_nodes x num_classes)
+        # Assumiamo che data.y contenga le classi, quindi data.y.max().item() + 1 dà il num_classes
+        num_classes = data.y.max().item() + 1
+        all_prob = torch.zeros((data.num_nodes, num_classes), dtype=torch.float, device=device)
+
+        try:
+            with torch.no_grad():
+                for batch in loaders.inference_loader:
+                    batch = batch.to(device)
+                    out = model(batch)
+                    n_seed = get_seed_indices(batch, loaders.sampler_type)
+                    global_ids = get_global_ids(batch, loaders.sampler_type)
+
+                    if global_ids is not None:
+                        # 3. Assegniamo la matrice logit dei nodi target
+                        all_prob[global_ids] = out[:n_seed]
+                        
+        except (TypeError, AttributeError):
+            return self.get_probabilities(state, data)
+            
+        # 4. Applichiamo la softmax sui logit accumulati
+        return F.softmax(all_prob, dim=-1)
+        
+
     def get_embeddings_batched(self, state: dict, loaders, data) -> torch.Tensor:
         """Batched inference — collect hidden embeddings for ALL nodes.
 

@@ -4,7 +4,7 @@
 # Run:  python main.py -c configs/roman-empire_gcn_modified.yaml
 seed: 42
 device: cuda
-num_runs: 1
+num_runs: 3
 save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
 
 dataset:
@@ -13,14 +13,14 @@ dataset:
   normalize: false
 
 noise:
-  type: £[clean, uniform, pair]
-  rate: 0.3
+  type: uniform
+  rate: £[0.0, 0.15, 0.3, 0.45]
   seed: 42
 
 model:
   name: gcn_modified
-  hidden_channels: 512
-  n_layers: 9
+  hidden_channels: 256
+  n_layers: 10
   dropout: 0.5
   self_loop: true
   # --- GCN_modified (MPNNs) knobs ---
@@ -29,8 +29,9 @@ model:
   mod_norm: bn         # none|ln|bn (per-layer normalization)
   jk: false              # additive jumping-knowledge (bool)
   pre_ln: false
-  inner_gnn: gcn          # gcn|gat|sage  -> tunedGNN GCN* | GAT* | GraphSAGE*
+  inner_gnn: gat          # gcn|gat|sage  -> tunedGNN GCN* | GAT* | GraphSAGE*
   heads: 1                # tunedGNN uses heads=1 for GAT*
+
 
 training:
   method: standard

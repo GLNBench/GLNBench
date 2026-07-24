@@ -742,7 +742,9 @@ class GCN_modified(nn.Module):
         if self.pre_ln:
             self.pre_lns = nn.ModuleList()
 
-        self.lin_in = nn.Linear(in_channels, hidden_channels)
+        # Per test di equivalenza
+        self.lin_in =  MLP(in_channels, hidden_channels, hidden_channels, num_layers=2, dropout=dropout)
+        # self.lin_in = nn.Linear(in_channels, hidden_channels)
 
         def make_conv(ic, oc):
             if self.inner_gnn == 'gat':
@@ -767,7 +769,13 @@ class GCN_modified(nn.Module):
                 self.pre_lns.append(nn.LayerNorm(in_channels))
             local_layers -= 1
 
+        # Solo per test
+        self.epsilons = nn.ParameterList()
+
         for _ in range(local_layers):
+            # per test
+            self.epsilons.append(torch.nn.Parameter(torch.zeros(1)))  # Learnable step size for diffusion
+
             self.local_convs.append(make_conv(hidden_channels, hidden_channels))
             self.lins.append(nn.Linear(hidden_channels, hidden_channels))
             self.lns.append(nn.LayerNorm(hidden_channels))
@@ -797,6 +805,9 @@ class GCN_modified(nn.Module):
             if self.res:
                 x = conv_out + self.lins[i](x)
             else:
+                # Neural residual for test
+                #coeff = (1 + torch.tanh(self.epsilons[i]))
+                #x = coeff * x + conv_out
                 x = conv_out
             if self.ln:
                 x = self.lns[i](x)

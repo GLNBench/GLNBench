@@ -1,44 +1,49 @@
-# roman-empire — gcn & gat baselines (HETEROPHILIC).  All 13 methods x noise sweep.
-# Run:  python main.py -c configs/roman-empire.yaml
+# roman-empire — GCN_modified (tunedGNN strong baseline, arXiv:2406.08993).
+# Separate backbone (learned linear residual + pre_linear + LN/BN). All 13 methods x noise sweep.
+# NOTE: hidden=512 full-batch can be memory-heavy on dense graphs — use a >=24GB GPU.
+# Run:  python main.py -c configs/roman-empire_gcn_modified.yaml
 seed: 42
 device: cuda
-num_runs: 3
+num_runs: 1
 save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
 
 dataset:
-  name: roman-empire
+  name: questions
   root: data
-  normalize: false        # row-normalize features (false for heterophilic)
+  normalize: false
 
 noise:
-  type: £[clean, uniform, pair]   # add/edit rates & types as needed
-  rate: 0.3
-  seed: 42
+  type: clean
+  rate: 0.0
 
 model:
-  name: £[gcn, gat]
-  hidden_channels: 64
-  n_layers: 5
-  dropout: 0.3
-  self_loop: false          # FALSE for heterophilic (self-loops dilute neighbour signal)
-  use_residual: true      # true for heterophilic
-  jk: cat                # none|cat|max — 'cat' for heterophilic
-  normalization: layer     # none|batch|layer (batch is strongest on dense)
-  heads: 8
-  mlp_layers: 1
-  train_eps: false
-  use_pe: false
-  pe_dim: 8
+  name: gcn_modified
+  hidden_channels: 512
+  n_layers: 3
+  dropout: £[0.4,0.5,0.6,0.7]
+  self_loop: true
+  # --- GCN_modified (MPNNs) knobs ---
+  pre_linear: true     # project features before message passing
+  lin_res: true        # learned linear residual conv(x)+W_i*x (key for heterophily)
+  mod_norm: ln         # none|ln|bn (per-layer normalization)
+  jk: false              # additive jumping-knowledge (bool)
+  pre_ln: false
+  inner_gnn: gat          # gcn|gat|sage  -> tunedGNN GCN* | GAT* | GraphSAGE*
+  heads: 1                # tunedGNN uses heads=1 for GAT*
 
 training:
-  method: £[standard, positive_eigenvalues, gcod, nrgnn, pi_gnn, cr_gnn, community_defense, rtgnn, graphcleaner, unionnet, gnn_cleaner, erase, gnnguard]
-  lr: 0.01
-  weight_decay: 5e-4
-  epochs: 500
-  patience: 200
-  oversmoothing_every: 20
-  mode: transductive
-  checkpoint_every_epoch: false  # also save a .pt EVERY epoch (huge #files). Keep false; best-epoch is always kept.
+  method: standard
+  lr: 0.001
+  weight_decay: 0.0
+  epochs: 1500
+  patience: 1500
+  oversmoothing_every: 50
+  early_stopping_metric: val_roc_auc
+  mode: inductive   # transductive or inductive
+  batch_size: 4096 #512    # uncomment to enable mini-batch processing
+  sampler: neighbor   # neighbor, cluster, graphsaint, or random_node
+  # sampler_params:     # sampler-specific parameters
+  num_neighbors: [15, 10]
 
 gcod_params:                 # DELIBERATELY TUNED per dataset (do NOT "fix" to paper values)
   batch_size: 64

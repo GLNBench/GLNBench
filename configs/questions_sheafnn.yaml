@@ -1,0 +1,36 @@
+seed: 42
+device: cuda
+num_runs: 3
+
+dataset:
+  name: questions  # roman-empire is a heterophilous dataset
+  root: data
+  normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
+
+noise:
+  type: clean         # uniform, gaussian, or feature_mask
+  rate: 0.0
+  seed: 42
+
+model:
+  name: SheafNN
+  hidden_channels: 256
+  n_layers: 3
+  dropout_in: 0.2
+  dropout: 0.2
+  normalization: layer
+  stalk : 4
+  non_linear: True
+  ego: True
+  attention : True
+
+
+training:
+  method: SheafNN_Trainer #sheaf_graphcleaner
+  checkpoint_every_epoch: False
+  lr: 0.001
+  weight_decay: 0
+  epochs: 2500         # keep low for local runs
+  patience: 500
+  early_stopping_metric: val_roc_auc
+  oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics

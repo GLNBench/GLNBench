@@ -4,28 +4,28 @@
 # Run:  python main.py -c configs/roman-empire_gcn_modified.yaml
 seed: 42
 device: cuda
-num_runs: 1
+num_runs: 3
 save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
 
 dataset:
-  name: roman-empire
+  name: minesweeper
   root: data
   normalize: false
 
 noise:
-  type: £[clean, uniform, pair]
-  rate: 0.3
+  type: clean
+  rate: 0.0
   seed: 42
 
 model:
   name: gcn_modified
-  hidden_channels: 512
-  n_layers: 9
-  dropout: 0.5
+  hidden_channels: 64
+  n_layers: 12
+  dropout: 0.2
   self_loop: true
   # --- GCN_modified (MPNNs) knobs ---
   pre_linear: true     # project features before message passing
-  lin_res: true        # learned linear residual conv(x)+W_i*x (key for heterophily)
+  lin_res: false        # learned linear residual conv(x)+W_i*x (key for heterophily)
   mod_norm: bn         # none|ln|bn (per-layer normalization)
   jk: false              # additive jumping-knowledge (bool)
   pre_ln: false
@@ -33,11 +33,11 @@ model:
   heads: 1                # tunedGNN uses heads=1 for GAT*
 
 training:
-  method: standard
-  lr: 0.001
+  method: £[standard, positive_eigenvalues, gcod, nrgnn, pi_gnn, cr_gnn, community_defense, rtgnn, graphcleaner, unionnet, gnn_cleaner, erase, gnnguard]
+  lr: 0.01
   weight_decay: 0.0
-  epochs: 2500
-  patience: 2500
+  epochs: 2000
+  patience: 2000
   oversmoothing_every: 50
   mode: transductive
   checkpoint_every_epoch: false  # also save a .pt EVERY epoch (huge #files). Keep false; best-epoch is always kept.

@@ -16,6 +16,7 @@ from typing import Optional
 import torch
 from torch_geometric.data import Data
 
+import torch_sparse 
 
 @dataclass
 class GraphLoaders:

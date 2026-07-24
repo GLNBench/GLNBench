@@ -10,11 +10,6 @@ from methods.registry import register_helper
 class SheafNNHelper(MethodHelper):
 
     def setup(self, backbone_model, data, config, device, init_data):
-        
-        with torch.no_grad():
-            backbone_model.eval()
-            backbone_model(data)
-            backbone_model.train()
 
         optimizer = optim.Adam(
             backbone_model.parameters(),
@@ -41,6 +36,57 @@ class SheafNNHelper(MethodHelper):
 
         return {'train_loss': loss.item()}
 
+    def train_step_batched(self, state: dict, loaders, data, epoch: int) -> dict:
+        """Mini-batch training step.
+
+        Only called when ``supports_batched_training()`` is True and
+        ``training.batch_size`` is set.
+
+        Default implementation iterates ``loaders.train_loader`` and calls the
+        primary model with CE loss on seed (target) nodes.  Override for
+        non-trivial training logic.
+
+        Args:
+            state: Method state dict.
+            loaders: ``GraphLoaders`` from ``util.graph_sampling``.
+            data: Full PyG Data object (for reference / masks).
+            epoch: Current epoch (0-based).
+
+        Returns:
+            Dict with at least ``'train_loss': float``.
+        """
+        from util.graph_sampling import get_seed_indices
+
+        model = state['model']
+        optimizer = state['optimizer']
+        device = state.get('device', next(model.parameters()).device)
+
+        model.train()
+        total_loss = 0.0
+        n_batches = 0
+
+        for batch in loaders.train_loader:
+            batch = batch.to(device)
+            optimizer.zero_grad(set_to_none=True)
+
+            out = model(batch)
+            n_seed = get_seed_indices(batch, loaders.sampler_type)
+
+            # Loss on seed/target nodes only
+            seed_mask = batch.train_mask[:n_seed]
+            idx = seed_mask.nonzero(as_tuple=True)[0]
+            if len(idx) == 0:
+                continue
+
+            loss = F.cross_entropy(out[idx], batch.y[idx])
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+            n_batches += 1
+
+        return {'train_loss': total_loss / max(n_batches, 1)}
+
     def compute_val_loss(self, state, data):
         model = state['model']
         model.eval()
@@ -55,7 +101,7 @@ class SheafNNHelper(MethodHelper):
             return model(data).argmax(dim=1)
 
     def get_probabilities(self, state, data):
-        model = state['backbone']
+        model = state['model']
         model.eval()
         with torch.no_grad():
             return F.softmax(model(data), dim=1)

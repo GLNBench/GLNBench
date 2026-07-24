@@ -3,7 +3,7 @@ device: cuda
 num_runs: 3
 
 dataset:
-  name: Minesweeper  # roman-empire is a heterophilous dataset
+  name: tolokers  # roman-empire is a heterophilous dataset
   root: data
   normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
 
@@ -14,12 +14,12 @@ noise:
 
 model:
   name: SheafNN
-  hidden_channels: 32
-  n_layers: 10
-  dropout_in: 0.1
-  dropout: 0.2
+  hidden_channels: 256
+  n_layers: 4
+  dropout_in: 0.2
+  dropout: 0.5
   normalization: batch
-  stalk : 4
+  stalk : 2
   non_linear: True
   ego: True
   attention : True
@@ -28,11 +28,10 @@ model:
 training:
   method: SheafNN_Trainer #sheaf_graphcleaner
   checkpoint_every_epoch: False
-  lr: 0.01
-  weight_decay: 0.0
+  lr: 0.005
+  weight_decay: 5.0e-4
   epochs: 3500         # keep low for local runs
-  patience: 1000
-  early_stopping_metric: val_f1
+  patience: 500
   oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics
   mode: transductive   # transductive or inductive
   # batch_size: 512    # uncomment to enable mini-batch processing

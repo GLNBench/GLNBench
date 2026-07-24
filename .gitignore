@@ -162,3 +162,5 @@ torch_geometric.nn.conv.*.py
 /.claude
 
 
+pyg-lib/
+training_log.txt
