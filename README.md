@@ -1,10 +1,9 @@
 # Benchmarking Robustness Strategies for Graph Neural Networks under Noise
 
-A benchmarking framework for systematically evaluating GNN robustness strategies under label noise. It reproduces 13 robustness methods under standardized conditions across 24 datasets with 10 noise types, enabling fair and reproducible comparisons. The framework measures classification performance, oversmoothing behaviour, and computational cost in a unified pipeline.
+A benchmarking framework for systematically evaluating GNN robustness strategies under label noise. It benchmarks 12 robustness methods plus a Standard baseline under standardized conditions across 24 datasets with 9 noise types, enabling fair and reproducible comparisons. The framework measures classification performance, oversmoothing behaviour, and computational cost in a unified pipeline.
 
-<p align="center">
-  <img src="images/teaser.png" alt="Benchmark pipeline overview" width="100%">
-</p>
+![GLNBench two-row code control flow from YAML configuration and sweep dispatch through graph preparation, noise injection, training, checkpoint restoration, clean-test evaluation, and result metrics](images/teaser-control-flow.svg)
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
@@ -40,15 +39,33 @@ A benchmarking framework for systematically evaluating GNN robustness strategies
 
 ## Quick Start
 
+### Browser experiment builder
+
+Use the privacy-preserving [GLNBench Experiment Builder](https://glnbench.github.io/website/builder.html)
+to select a supported dataset, noise model, backbone, robustness method, and
+training settings. It validates known compatibility constraints and produces a
+downloadable `config.yaml`, exact run commands, and shareable configuration
+links. The builder runs entirely in the browser and does not submit experiments
+or configuration data to a server.
+
+For a zero-setup, CPU-friendly demonstration, open
+[`examples/quickstart.ipynb`](examples/quickstart.ipynb) in Google Colab. Full
+benchmark sweeps should still be run in a controlled local, server, or cluster
+environment. The notebook supports Colab's Python 3.12 runtime through
+`requirements-colab.txt`, preserving Colab's preinstalled PyTorch build. This
+quickstart environment is for demonstration; use the Python 3.10/3.11 pinned
+environment below when reproducing benchmark results.
+
+
 ```bash
 # 1. Install dependencies
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 # For GPU (CUDA 11.8), run setup.sh instead
 
 # 2. Edit config.yaml to set dataset, noise, method, etc.
 
 # 3. Run the benchmark
-python main.py -c config.yaml
+python3 main.py -c config.yaml
 
 # Results are saved to results/<experiment_dir>/experiment.json
 ```
@@ -59,7 +76,7 @@ python main.py -c config.yaml
 
 **CPU:**
 ```bash
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 **GPU (CUDA 11.8):**
@@ -69,7 +86,9 @@ pip install -r requirements.txt
 
 This installs PyTorch 2.2.1, PyTorch Geometric, and all dependencies.
 
-**Dependencies:** PyTorch, PyTorch Geometric (torch-scatter, torch-sparse, torch-cluster, pyg-lib), scikit-learn, networkx, pandas, matplotlib, codecarbon, pytest.
+The pinned release environment supports Python 3.10 and 3.11. On macOS, use `./setup_macos.sh`. The required `torch-scatter` and `torch-sparse` sampler wheels are installed from PyG's matching wheel index; further compiled PyG extensions are optional.
+
+**Dependencies:** PyTorch, PyTorch Geometric, NumPy, SciPy, scikit-learn, networkx, pandas, cleanlab, matplotlib, codecarbon, PyYAML, requests, and pytest.
 
 ---
 
@@ -80,7 +99,7 @@ This installs PyTorch 2.2.1, PyTorch Geometric, and all dependencies.
 The primary entry point. Runs multi-run sweeps with automatic incremental execution, checkpointing, and aggregated statistics.
 
 ```bash
-python main.py -c config.yaml
+python3 main.py -c config.yaml
 ```
 
 | Flag | Default | Description |
@@ -95,16 +114,16 @@ python main.py -c config.yaml
 
 ```bash
 # Start with 2 runs
-python main.py -c config.yaml --num-runs 2
+python3 main.py -c config.yaml --num-runs 2
 
 # Later, bump to 5 -- only runs 3-5 execute
-python main.py -c config.yaml --num-runs 5
+python3 main.py -c config.yaml --num-runs 5
 
 # Force full re-run
-python main.py -c config.yaml --num-runs 5 --force
+python3 main.py -c config.yaml --num-runs 5 --force
 
 # Re-evaluate from checkpoints without training
-python main.py -c config.yaml --eval-only
+python3 main.py -c config.yaml --eval-only
 ```
 
 ### 2. Parallel Single Run &mdash; `main_multithreading.py`
@@ -190,9 +209,11 @@ training:
 
 | Parameter | Description |
 |-----------|-------------|
-| `seed` | Random seed for reproducibility. Controls model init, data splits, and noise generation. Each run uses `seed + run_id` for independent runs. |
+| `seed` | Base seed for reproducibility. Model initialization and generated splits use `seed + 100 * run_id`. |
 | `device` | `cpu` or `cuda`. Falls back to CPU if CUDA is unavailable. |
 | `num_runs` | Number of independent runs per configuration (default: 5). |
+
+Noise uses its own stream: `noise.seed + 10 * run_id`.
 
 ### Dataset
 
@@ -223,7 +244,7 @@ Datasets are automatically downloaded on first use. GraphLAND datasets are fetch
 
 Label noise is injected into **training and validation labels**. Test labels remain clean (ground truth for final evaluation). This reflects real-world conditions where noisy annotations affect all labeled data, including the validation set used for early stopping.
 
-Train and validation noise is applied independently (different random seed) so that the specific corrupted nodes differ, but the noise type and rate are identical.
+Noise is sampled once over the concatenated train+validation labels and then split back into train and validation portions. Test labels remain clean.
 
 | Parameter | Description |
 |-----------|-------------|
@@ -231,26 +252,27 @@ Train and validation noise is applied independently (different random seed) so t
 | `rate` | Fraction of labels corrupted (0.0 to 1.0), applied to both train and val |
 | `seed` | Seed for noise generation (combined with `run_id` for per-run variation) |
 
-**10 noise types:**
+**9 noise types (plus a `clean` no-noise baseline):**
 
 | Type | Mechanism |
 |------|-----------|
 | `clean` | No corruption. Identity transition matrix. |
 | `uniform` | Transition matrix: P[i,i] = 1 - rate, P[i,j] = rate / (C-1) for i != j. Each label resampled from its row. |
-| `uniform_simple` | Per-node coin flip with probability `rate` to a uniformly random class. |
+| `uniform_simple` | Per-node coin flip with probability `rate` to a uniformly random *different* class. |
 | `pair` | Circular chain: class i flips to class (i-1) mod C with probability `rate`. |
 | `random` | Random transition matrix per class, seeded by noise seed. |
 | `random_pair` | Each class flips to one randomly chosen other class with probability `rate`. |
 | `flip` | Sequential circular: 0 &rarr; 1 &rarr; 2 &rarr; ... &rarr; C-1 &rarr; 0 with probability `rate`. |
-| `uniform_mix` | P = (1 - rate) * I + rate / C. Uniform confusion matrix. |
-| `deterministic` | Exactly floor(rate * num_train) nodes corrupted (fixed count, not stochastic). |
-| `instance` | Instance-dependent: per-node flip rate from truncated normal, transitions depend on node features via learned projection. |
+| `uniform_mix` | Mix the label with a uniform draw over all classes: P[i,i] = 1 - rate + rate/C, P[i,j] = rate/C for i != j. |
+| `deterministic` | Exactly `floor(rate * (num_train + num_val))` nodes are selected and changed. |
+| `instance` | Instance-dependent: per-node flip rate from truncated normal, transitions depend on node features via a fixed random projection. |
 
 ### Model Backbone
 
 | Parameter | Description | Used by |
 |-----------|-------------|---------|
-| `name` | Architecture: `gcn`, `gin`, `gat`, `gatv2`, `gps`, `gcn_modified` | All |
+| `name` | Architecture: `gcn`, `gin`, `gat`, `gatv2`, `gps`, `gcn_modified` (strong tunedGNN backbone) | All |
+| `inner_gnn` | Inner convolution of the `gcn_modified` tunedGNN backbone: `gcn` gives GCN\*, `gat` gives GAT\*, `sage` gives GraphSAGE\* | `gcn_modified` |
 | `hidden_channels` | Hidden representation size | All |
 | `n_layers` | Number of GNN layers | All |
 | `dropout` | Dropout probability | All |
@@ -288,15 +310,16 @@ Recommended per-dataset recipes are provided in `configs/<dataset>_gcn_modified.
 | `lr` | 0.001 | Learning rate |
 | `weight_decay` | 5e-4 | L2 regularization |
 | `epochs` | 200 | Maximum training epochs |
-| `patience` | 20 | Early stopping patience (epochs without val loss improvement) |
+| `patience` | 20 | Early stopping patience (epochs without improvement in `early_stopping_metric`) |
+| `early_stopping_metric` | `val_acc` | Selection metric: `val_acc` (maximize) or `val_loss` (minimize). |
 | `oversmoothing_every` | 20 | Compute oversmoothing metrics every N epochs. Set to 1 for per-epoch tracking. |
-| `checkpoint_every_epoch` | true | Save a `.pt` checkpoint every epoch. Set to false to only keep the best-epoch checkpoint. |
+| `checkpoint_every_epoch` | false | Save an additional `.pt` checkpoint every epoch. Best-checkpoint persistence is controlled by top-level `save_checkpoint`. |
 | `mode` | transductive | Learning mode: `transductive` (shared graph) or `inductive` (disjoint subgraphs). See [Transductive and Inductive Learning](#transductive-and-inductive-learning). |
 | `batch_size` | — | Mini-batch size. When set, enables batched training/evaluation. See [Batch Processing](#batch-processing). |
 | `sampler` | neighbor | Graph sampler type: `neighbor`, `cluster`, `graphsaint`, or `random_node`. Only used when `batch_size` is set. |
 | `sampler_params` | — | Sampler-specific parameters (dict). See [Batch Processing](#batch-processing). |
 
-**Early stopping:** Training halts when validation loss does not improve for `patience` consecutive epochs. The model is restored to the best-epoch weights before evaluation.
+**Early stopping:** Training halts when the configured validation metric does not improve for `patience` consecutive epochs. The in-memory best-epoch weights are restored before evaluation.
 
 ### Parameter Sweeps
 
@@ -360,7 +383,7 @@ gcod_params:
   batch_size: 64                # Mini-batch size for NeighborLoader
   uncertainty_lr: 0.001         # Learning rate for per-sample uncertainty parameters
   kl_start_epoch: 2             # Epoch to activate the KL term (delayed for stability)
-  momentum: 0.9                 # Class-centroid momentum (use 0 for margin-based correction)
+  momentum: 0                   # Release default: no centroid momentum in correction mode
   temperature: 1.0             # Softening temperature for the L3 distribution loss
   similarity_mode: correction   # 'correction' (label correction via centroids) or 'discount'
 ```
@@ -369,18 +392,18 @@ gcod_params:
 ```yaml
 nrgnn_params:
   edge_hidden: 16   # Hidden dim in edge predictor
-  n_p: 10           # Max potential edges per node from most similar nodes
+  n_p: 2            # Release default (original implementation: 10)
   p_u: 0.7          # Confidence threshold for unlabeled node selection
   alpha: 0.05       # Edge reconstruction loss weight
   beta: 1.0         # Consistency loss weight (main model vs predictor on confident nodes)
   t_small: 0.1      # Connection threshold for edge predictor
-  n_n: 50           # Negative samples for edge reconstruction
+  n_n: 5            # Release default (original implementation: 50)
 ```
 
 #### PI-GNN
 ```yaml
 pi_gnn_params:
-  start_epoch: 200   # Epoch to begin MI regularization
+  start_epoch: 1     # Release default; must remain below training.epochs
   miself: false       # Use self mutual information in contextual loss
   norm: null          # Normalization factor in loss computation
   vanilla: false      # Disable context-aware regularization
@@ -416,9 +439,9 @@ rtgnn_params:
   co_lambda: 0.1     # Intra-view regularization weight
   alpha: 0.3         # Reconstruction loss weight
   th: 0.8            # Pseudo-label confidence threshold
-  K: 50              # KNN candidates for edge augmentation
+  K: 3               # Release default (original implementation: 50)
   tau: 0.05          # Min similarity for edge filtering
-  n_neg: 100         # Negative samples per node for reconstruction
+  n_neg: 10          # Release default (original implementation: 100)
 ```
 
 #### GraphCleaner
@@ -426,7 +449,7 @@ rtgnn_params:
 graphcleaner_params:
   k: 5                      # Neighbourhood hops in mislabel detector
   sample_rate: 0.5           # Fraction of nodes for synthetic mislabel generation
-  max_iter_classifier: 5000  # Max iterations for binary classifier training
+  max_iter_classifier: 50    # Release default (original implementation: 5000)
   held_split: valid          # Split for noise transition matrix estimation
 ```
 
@@ -442,14 +465,14 @@ unionnet_params:
 #### GNN Cleaner
 ```yaml
 gnn_cleaner_params:
-  label_propagation_iterations: 50  # LP iterations for label correction
-  similarity_epsilon: 1e-8          # Numerical stability constant
+  label_propagation_iterations: 5    # Release default (original implementation: 50)
+  similarity_epsilon: 1.0e-8         # Numerical stability constant
 ```
 
 #### ERASE
 ```yaml
 erase_params:
-  n_embedding: 512      # Embedding dimension
+  n_embedding: 32       # Release default (original implementation: 512)
   n_heads: 8            # Attention heads in first GAT layer
   use_layer_norm: false  # Apply layer normalization
   use_residual: false    # Residual connections
@@ -879,16 +902,79 @@ class MyMethodTrainer(BaseTrainer):
         return result
 ```
 
-### Step 3: Use it
+### Step 3: Add it to the benchmark manifest
 
-Set `training.method: my_method` in `config.yaml` and run. No other wiring needed -- both registries auto-discover files in their directories.
+Both Python registries auto-discover the new files, but public benchmark
+capabilities are declared separately in `benchmark_manifest.json`. Add one
+entry to the `methods` array:
+
+```json
+{
+  "id": "my_method",
+  "label": "My Method",
+  "batched_training": false,
+  "parameters": {
+    "temperature": {
+      "type": "number",
+      "default": 1.0,
+      "min": 0.000001,
+      "step": 0.1,
+      "description": "Softening temperature used by My Method."
+    }
+  }
+}
+```
+
+The `id` must exactly match the value used by both `@register_helper` and
+`@register`. Set `batched_training` from the helper's actual
+`supports_batched_training()` behavior. Add applicable capability metadata
+such as `large_graph_risk`, `width_sensitive`, or
+`requires_edge_weights` so the website builder can issue accurate warnings.
+Method-specific configuration remains under a `my_method_params` mapping in
+YAML. Declare every release-default parameter in the manifest with its type,
+default, description, and applicable range or choices. The builder then creates
+the corresponding controls and YAML automatically. Use an empty
+`"parameters": {}` object only when the method truly has no additional
+settings; experimental parameters can still be supplied through the builder's
+advanced JSON override.
+
+Add the same defaults under `my_method_params` in the release `config.yaml`:
+
+```yaml
+my_method_params:
+  temperature: 1.0
+```
+
+The manifest test compares these mappings exactly, so a changed default must be
+updated in both places in the same pull request.
+
+The manifest synchronization tests compare the manifest with the implemented
+method, dataset, backbone, noise, and modified-backbone registries. A pull
+request that registers a method but omits its manifest entry will fail these
+tests.
+
+### Step 4: Test and use it
+
+```bash
+python3 -m pytest tests/test_benchmark_manifest.py
+./test.sh -k my_method
+```
+
+Then set `training.method: my_method` in `config.yaml` and run the benchmark.
+
+After the code and manifest reach the GLNBench `main` branch, the website's
+scheduled or manually dispatched **Sync benchmark manifest** workflow downloads
+the canonical manifest, regenerates only `builder-manifest.js`, and opens a
+website pull request. Review and merge that pull request to publish the method
+in the Experiment Builder dropdown. No personal token or manual editing of the
+generated JavaScript is required.
 
 ---
 
 ## Testing
 
 ```bash
-# Run all tests (99 tests across 13 methods)
+# Run all tests across 13 methods
 ./test.sh
 
 # Run a single method
@@ -909,6 +995,7 @@ Tests use 5 epochs on Cora with reduced hyperparameters for speed. The test suit
 - **Smoke tests** (`test_smoke.py`): End-to-end training + evaluation for all 13 methods
 - **Evaluation tests** (`test_evaluation.py`): Unit tests for classification and oversmoothing metrics
 - **Checkpoint tests** (`test_checkpoint_consistency.py`): Verify checkpoint save/load round-trip produces identical predictions
+- **Noise tests** (`test_noise.py`): Validate rates, deterministic counts, compact indexing, and reproducibility
 
 ---
 
@@ -980,11 +1067,16 @@ Tests use 5 epochs on Cora with reduced hyperparameters for speed. The test suit
 |   +-- test_smoke.py               # Smoke tests for all 13 methods
 |   +-- test_evaluation.py          # Unit tests for metrics
 |   +-- test_checkpoint_consistency.py  # Checkpoint round-trip tests
+|   +-- test_noise.py               # Noise validation and regression tests
 |
++-- configs/                        # Canonical full benchmark configurations
 +-- results/                        # Generated experiment outputs
 +-- images/                         # Figures for README
-+-- requirements.txt
++-- examples/quickstart.ipynb       # Colab-compatible Cora demonstration
++-- requirements.txt               # Pinned Python 3.10/3.11 release environment
++-- requirements-colab.txt         # Python 3.12 Colab quickstart environment
 +-- setup.sh                        # GPU installation script
++-- setup_macos.sh                  # macOS/CPU installation helper
 +-- test.sh                         # Test runner
 +-- LICENSE
 ```
@@ -993,4 +1085,5 @@ Tests use 5 epochs on Cora with reduced hyperparameters for speed. The test suit
 
 ## Author
 
-Farooq Ahmad Wani, Antonio Purificato, Andrea Giussepe Di Francesco, Fabrizio Silvestri, Michael Corelli, Maria Sofia Bucarelli, Oleksandr Pryymak
+Farooq Ahmad Wani, Antonio Purificato, Maria Sofia Bucarelli, Andrea Giuseppe Di Francesco, 
+Michael Corelli, Oleksandr Pryymak, Fabrizio Silvestri
