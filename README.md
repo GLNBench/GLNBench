@@ -2,11 +2,13 @@
 
 A benchmarking framework for systematically evaluating GNN robustness strategies under label noise. It reproduces 13 robustness methods under standardized conditions across 24 datasets with 10 noise types, enabling fair and reproducible comparisons. The framework measures classification performance, oversmoothing behaviour, and computational cost in a unified pipeline.
 
+## This branch introduces a Sheaf Neural Network model based on Bodnar et al. implementation.
+It has been introduced as part of Giovanni Adelfio's B.sc thesis, which can be found [here](/Tesi_Adelfio.pdf)
+
+
 <p align="center">
   <img src="images/teaser.png" alt="Benchmark pipeline overview" width="100%">
 </p>
-## This branch introduces a Sheaf Neural Network model based on Bodnar et al. implementation.
-It has been introduced as part of Giovanni Adelfio's B.sc thesis, which can be found [here](/Tesi_Adelfio.pdf)
 ## Table of Contents
 
 - [Quick Start](#quick-start)
