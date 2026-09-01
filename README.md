@@ -5,7 +5,8 @@ A benchmarking framework for systematically evaluating GNN robustness strategies
 <p align="center">
   <img src="images/teaser.png" alt="Benchmark pipeline overview" width="100%">
 </p>
-
+## This branch introduces a Sheaf Neural Network model based on Bodnar et al. implementation.
+It has been introduced as part of Giovanni Adelfio's B.sc thesis, which can be found [here](/Tesi_Adelfio.pdf)
 ## Table of Contents
 
 - [Quick Start](#quick-start)
