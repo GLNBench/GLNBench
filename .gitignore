@@ -2,7 +2,10 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
+*.log
+results_normal/
+results_GNN-Sheaf/
+*.out
 # C extensions
 *.so
 

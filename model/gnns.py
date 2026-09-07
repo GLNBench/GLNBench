@@ -593,7 +593,7 @@ class GPS(nn.Module):
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
                  n_layers: int = 3, dropout: float = 0.5, heads: int = 4,
                  attn_type: str = 'multihead', use_pe: bool = False, pe_dim: int = 8,
-                 with_bias: bool = True, norm_info: dict | None = None, act: str = 'F.relu'):
+                 with_bias: bool = True, norm_info: dict | None = None, act: str = 'F.relu', lin_res: bool = False):
         super().__init__()
 
         self.n_layers = n_layers
@@ -602,6 +602,8 @@ class GPS(nn.Module):
         self.act = eval(act)
         self.use_pe = use_pe
         self.attn_type = attn_type
+
+        self.lin_res = lin_res
 
         norm_info = norm_info or {'is_norm': False, 'norm_type': 'LayerNorm'}
         self.is_norm = norm_info['is_norm']
@@ -623,6 +625,7 @@ class GPS(nn.Module):
         self.convs = ModuleList()
         self.norms = ModuleList() if self.is_norm else None
 
+        self.lins = ModuleList() if self.lin_res else None
         for i in range(n_layers):
             nn_module = Sequential(
                 Linear(hidden_channels, hidden_channels),
@@ -645,6 +648,9 @@ class GPS(nn.Module):
                 assert self.norms is not None
                 assert self.norm_type is not None
                 self.norms.append(self.norm_type(hidden_channels))
+            
+            if self.lin_res:
+                self.lins.append(nn.Linear(hidden_channels, hidden_channels))
 
     def _forward_body(self, data):
         """Run lin_in + all GPS convs. Returns hidden_channels dim (before lin_out)."""
@@ -668,7 +674,12 @@ class GPS(nn.Module):
             edge_attr = edge_attr + edge_weight.view(-1, 1)
 
         for i, conv in enumerate(self.convs):
-            x = conv(x, edge_index, batch, edge_attr=edge_attr)
+            conv_out = conv(x, edge_index, batch, edge_attr=edge_attr)
+
+            if self.lin_res:
+                x = conv_out + self.lins[i](x)
+            else:
+                x = conv_out
 
             if i < self.n_layers - 1:
                 if self.is_norm:
@@ -695,6 +706,9 @@ class GPS(nn.Module):
                 norm.reset_parameters()
         if hasattr(self, 'jk_lin'):
             self.jk_lin.reset_parameters()
+        if self.lin_res:
+            for lin in self.lins:
+                lin.reset_parameters()
 
 class GCN_modified(nn.Module):
     """Faithful port of the "Classic GNNs are Strong Baselines" tuned backbone

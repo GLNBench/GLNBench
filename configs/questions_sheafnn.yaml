@@ -8,21 +8,25 @@ dataset:
   normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
 
 noise:
-  type: clean         # uniform, gaussian, or feature_mask
-  rate: 0.0
+  type: uniform         # uniform, gaussian, or feature_mask
+  rate: £[0.0, 0.15, 0.3, 0.45]
   seed: 42
 
 model:
   name: SheafNN
   hidden_channels: 256
   n_layers: 3
-  dropout_in: 0.2
-  dropout: 0.2
+  dropout_in: 0.7
+  dropout: 0.6
   normalization: layer
   stalk : 4
   non_linear: True
   ego: True
   attention : True
+
+
+  
+  learnedad_residual: True
 
 
 training:
@@ -31,6 +35,6 @@ training:
   lr: 0.001
   weight_decay: 0
   epochs: 2500         # keep low for local runs
-  patience: 500
+  patience: 200
   early_stopping_metric: val_roc_auc
   oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics

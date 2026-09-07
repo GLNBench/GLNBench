@@ -60,11 +60,11 @@ def get_model(model_name, in_channels, hidden_channels, out_channels, **kwargs):
         'gin':    (GIN, ['n_layers', 'dropout', 'mlp_layers', 'train_eps', 'use_residual', 'jk']),
         'gat':    (GAT, ['n_layers', 'dropout', 'heads', 'use_residual', 'jk']),
         'gatv2':  (GATv2, ['n_layers', 'dropout', 'heads', 'use_residual', 'jk']),
-        'gps':    (GPS, ['n_layers', 'dropout', 'heads', 'use_pe', 'pe_dim']),
+        'gps':    (GPS, ['n_layers', 'dropout', 'heads', 'use_pe', 'pe_dim', 'lin_res',"norm_info", "attn_type"]),
         'gcn_modified': (GCN_modified, ['n_layers', 'dropout', 'heads', 'self_loop',
                                         'pre_ln', 'pre_linear', 'lin_res', 'mod_norm',
                                         'jk', 'inner_gnn']),
-        "sheafnn": (SheafNN, ['n_layers', 'dropout_in', 'dropout', 'stalk', 'non_linear', 'ego', 'act', 'norm_info', 'attention', 'ablation_GAT', 'learned_residual']),
+        "sheafnn": (SheafNN, ['n_layers', 'dropout_in', 'dropout', 'stalk', 'non_linear', 'ego', 'act', 'norm_info', 'attention', 'ablation', 'lin_res']),
     }
 
     if model_name not in model_registry:

@@ -150,8 +150,8 @@ def initialize_experiment(config, run_id=1):
         ego = config['model'].get('ego', False), 
         norm_info=config['model'].get('norm_info', None),
         attention=config['model'].get('attention', False),
-        ablation_GAT=config['model'].get('ablation_GAT', False),
-        learned_residual=config['model'].get('learned_residual', False)
+        ablation=config['model'].get('ablation', None),
+        attn_type=config['model'].get('attn_type', 'multihead')
     ).to(device)
 
     compute_info = {

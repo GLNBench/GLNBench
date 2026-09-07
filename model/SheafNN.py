@@ -27,13 +27,14 @@ class SheafNN(nn.Module):
                  act: str = 'F.elu',
                  norm_info: dict = {},
                  attention :bool = False,
-                 learned_residual: bool = True,
-                 ablation_GAT: bool = False):
+                 lin_res: bool = True,
+                 ablation: str = None):
         
         super().__init__()
         assert hidden_channels % stalk == 0, "Hidden channels must be divisible by the stalk dimension"
         self.hidden_channels = hidden_channels
-        if ablation_GAT:
+        if ablation == "GAT" or ablation == "GCN" or ablation == "SAGE":
+            self.sheaf = False
             self.stalk = 1
         else:
             self.stalk = stalk
@@ -43,8 +44,8 @@ class SheafNN(nn.Module):
         self.non_linear = non_linear
         self.ego = ego
         self.attention = attention
-        self.learned_residual = learned_residual
-        self.ablation_GAT = ablation_GAT
+        self.learned_residual = lin_res
+        self.ablation = ablation
         self.attention_layer = None
         if self.attention:
             self.attention_layer = nn.Linear(2 * hidden_channels, 1)
@@ -65,7 +66,7 @@ class SheafNN(nn.Module):
         else:
             self.emb_out = nn.Linear(hidden_channels, out_channels)
 
-        if not self.ablation_GAT:
+        if self.sheaf:
             num_gen_maps = n_layers if non_linear else 1
             self.gen_maps = nn.ModuleList()
             for _ in range(num_gen_maps):
@@ -83,14 +84,26 @@ class SheafNN(nn.Module):
         self.norms = nn.ModuleList()
 
                 
-        def make_conv(ic, oc):
-            return GATConv(ic, oc, heads=1, concat=False,
+        def make_conv(ic, oc, ablation):
+            heads = 1
+            self_loop = True
+            
+            if ablation == 'GAT':
+                # concat=False (average heads) keeps the output at `oc` so the
+                # per-layer linear residual matches for any `heads`. Identical to
+                # tunedGNN's GAT (which uses heads=1) at heads=1; add_self_loops
+                # False matches tunedGNN.
+                return GATConv(ic, oc, heads=heads, concat=False,
                                add_self_loops=False, bias=False)
+            if ablation == 'SAGE':
+                from torch_geometric.nn import SAGEConv
+                return SAGEConv(ic, oc)
+            return GCNConv(ic, oc, cached=False, normalize=True, add_self_loops=self_loop)
 
         self.local_convs = nn.ModuleList()
         for _ in range(n_layers):
-            if self.ablation_GAT:
-                self.local_convs.append(make_conv(hidden_channels, hidden_channels))
+            if not self.sheaf:
+                self.local_convs.append(make_conv(hidden_channels, hidden_channels, self.ablation))
                 f = hidden_channels 
             else:
                 self.linear_layers.append(nn.Linear(stalk, stalk, bias=False))
@@ -178,7 +191,7 @@ class SheafNN(nn.Module):
 
         for layer in range(self.n_layers):    
 
-            if self.ablation_GAT:
+            if not self.sheaf:
                 x = F.dropout(x, p=self.dropout, training=self.training)
                 local_conv = self.local_convs[layer]
                 x = local_conv(x, self.edge_index)
@@ -228,10 +241,10 @@ class SheafNN(nn.Module):
 
         x = F.dropout(x, p=self.dropout_in, training=self.training)
         x = self.MLP_in(x)
-
-        self.laplacian_builder = self._get_or_build_laplacian(self.edge_index, self.N)
+        if self.sheaf:
+            self.laplacian_builder = self._get_or_build_laplacian(self.edge_index, self.N)
         x = x.reshape((self.N * self.stalk, -1)) 
-        
+    
         if self.ego:
             x_diffuse = self._diffusion(x)
             x = torch.cat((x.reshape(self.N, -1), x_diffuse.reshape(self.N, -1)), dim=1)
@@ -272,7 +285,7 @@ class SheafNN(nn.Module):
                 self.emb_out_2.reset_parameters()
             else:
                 self.emb_out.reset_parameters()
-            if self.ablation_GAT:
+            if not self.sheaf:
                 for layer in self.local_convs:
                     layer.reset_parameters()
             else:

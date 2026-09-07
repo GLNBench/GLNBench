@@ -20,11 +20,11 @@ model:
   dropout: 0.2
   normalization: batch
   stalk : 1
-  non_linear: false
-  ego: False
-  attention : False
+ 
+  ego: True
+  
   learned_residual: True
-  ablation_GAT: True
+  ablation: GAT # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
 
 # Questa è la versione GAT
 training:
