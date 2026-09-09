@@ -24,7 +24,7 @@ model:
   non_linear: False
   ego: False
   attention : False
-  learned_residual: True
+  lin_res: True
 
 
 training:
