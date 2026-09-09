@@ -24,7 +24,7 @@ model:
   
   ego: True
   
-  learned_residual: True
+  lin_res: True
   ablation: GAT # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
 
 
