@@ -26,7 +26,7 @@ model:
 
 
   
-  learnedad_residual: True
+  lin_res: True
 
 
 training:
