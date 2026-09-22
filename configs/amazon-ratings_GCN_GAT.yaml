@@ -15,22 +15,24 @@ noise:
 
 model:
   name: SheafNN
-  hidden_channels: 256
+  hidden_channels: 512
   n_layers: 4
   dropout_in: 0.2
   dropout: 0.5
   normalization: batch
-  stalk : 4
-  non_linear: true
+  stalk : 1
+
   jk: £[True, False]
-  attention : False
+ 
+  learned_residual: True
+  ablation: £[GAT, GCN] # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
 
 
 training:
   method: SheafNN_Trainer #sheaf_graphcleaner
   checkpoint_every_epoch: False
-  lr: 0.005
-  weight_decay: 0.0005
+  lr: 0.001
+  weight_decay: 0.0
   epochs: 3500         # keep low for local runs
   patience: 500
   oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics

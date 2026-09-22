@@ -1,40 +1,40 @@
 seed: 42
 device: cuda
 num_runs: 3
+save_checkpoint: false
 
 dataset:
-  name: Minesweeper  # roman-empire is a heterophilous dataset
+  name: flickr  # roman-empire is a heterophilous dataset
   root: data
   normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
 
 noise:
-  type: uniform          # uniform, gaussian, or feature_mask
-  rate: £[0.0,0.15, 0.3, 0.45]
+  type: £[uniform, random, instance]         # uniform, gaussian, or feature_mask
+  rate: £[0.15, 0.3, 0.45]  # noise rates to test
   seed: 42
 
 model:
   name: SheafNN
-  hidden_channels: 64
-  n_layers: 15
-  dropout_in: 0.2
-  dropout: 0.2
+  hidden_channels: 256
+  n_layers: 4
+  dropout_in: 0.4
+  dropout: 0.6
   normalization: batch
   stalk : 1
- 
-  ego: True
-  
-  learned_residual: True
-  ablation: GAT # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
 
-# Questa è la versione GAT
+  jk: £[True, False]
+ 
+  learned_residual: True
+  ablation: SAGE # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
+
+
 training:
   method: SheafNN_Trainer #sheaf_graphcleaner
   checkpoint_every_epoch: False
-  lr: 0.01
+  lr: 0.001
   weight_decay: 0.0
   epochs: 3500         # keep low for local runs
-  patience: 1100
-  early_stopping_metric: val_roc_auc
+  patience: 500
   oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics
   mode: transductive   # transductive or inductive
   # batch_size: 512    # uncomment to enable mini-batch processing

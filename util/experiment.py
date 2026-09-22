@@ -35,6 +35,18 @@ def initialize_experiment(config, run_id=1):
     )
     if not isinstance(data, Data):
         data = data[0]
+
+    # Sparse to dense conversion and type casting
+    if hasattr(data, 'x') and data.x is not None:
+        if data.x.is_sparse or data.x.is_sparse_csr:
+            data.x = data.x.to_dense()
+        data.x = data.x.to(torch.float32).contiguous()
+
+    if hasattr(data, 'edge_index') and data.edge_index is not None:
+        if data.edge_index.is_sparse or data.edge_index.is_sparse_csr:
+            data.edge_index = data.edge_index.to_dense()
+        data.edge_index = data.edge_index.to(torch.long).contiguous()
+
     data = data.to(device)
     if not hasattr(data, "train_mask"):
         train_mask, val_mask, test_mask = ensure_splits(data, config["seed"])
@@ -140,17 +152,13 @@ def initialize_experiment(config, run_id=1):
         pre_ln=config['model'].get('pre_ln', False),
         inner_gnn=config['model'].get('inner_gnn', 'gcn'),
         # Sheaf-only knobs (ignored by other backbones)
-        stalk=config['model'].get('stalk', 1),
-        MLP_maps=config['model'].get('MLP_maps', True),
-        mlp_hidden_channels=config['model'].get('mlp_hidden_channels', [32, 32, 32]),
-        NWP = config['model'].get('NWP', False),
+        stalk=config['model'].get('stalk', 4),
         non_linear=config['model'].get('non_linear', False),
-        dropout_in=config['model'].get('dropout_in', 0.0),
-        act=config['model'].get('act', 'F.elu'),
-        ego = config['model'].get('ego', False), 
-        norm_info=config['model'].get('norm_info', None),
+        dropout_in=config['model'].get('dropout_in', 0.5),
+        norm_info=config['model'].get('norm_info', {}),
         attention=config['model'].get('attention', False),
         ablation=config['model'].get('ablation', None),
+        # GPS knobs (ignored by other backbones)
         attn_type=config['model'].get('attn_type', 'multihead')
     ).to(device)
 

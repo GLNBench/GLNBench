@@ -1,35 +1,36 @@
 seed: 42
 device: cuda
 num_runs: 3
+save_checkpoint: false
 
 dataset:
-  name: tolokers  # roman-empire is a heterophilous dataset
+  name: blogcatalog  # roman-empire is a heterophilous dataset
   root: data
   normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
 
 noise:
-  type: clean          # uniform, gaussian, or feature_mask
-  rate: 0.0
+  type: £[uniform, random, instance]          # uniform, gaussian, or feature_mask
+  rate: £[0.15, 0.3, 0.45]
   seed: 42
 
 model:
   name: SheafNN
-  hidden_channels: 256
+  hidden_channels: 128
   n_layers: 4
-  dropout_in: 0.2
-  dropout: 0.5
+  dropout_in: 0.4
+  dropout: 0.6
   normalization: batch
-  stalk : 2
+  stalk : 4
   non_linear: True
-  ego: True
+  jk: £[True, False]
   attention : True
 
 
 training:
   method: SheafNN_Trainer #sheaf_graphcleaner
   checkpoint_every_epoch: False
-  lr: 0.005
-  weight_decay: 5.0e-4
+  lr: 0.001
+  weight_decay: 0.0
   epochs: 3500         # keep low for local runs
   patience: 500
   oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics

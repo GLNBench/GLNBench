@@ -9,6 +9,18 @@ from model.gnns import MLP
 
 from torch_geometric.nn import GCNConv, GINConv, GATConv, GATv2Conv
 
+def I_maps(edge_index, x, stalk):
+    """
+    Generates identity maps for the restriction maps.
+    x: tensor of embeddings [N, hidden_channels]
+    usefull for ablation study to check the effect of the restriction maps on the performance of the model.
+    """
+    num_edges = edge_index.size(1)
+    device = x.device
+    A = torch.eye(stalk, device=device).unsqueeze(0).repeat(num_edges, 1, 1)
+    return A
+
+
 class SheafNN(nn.Module):
     """
     An implementation which follows directly the orthogonal maps implementation of the Sheaf by Bodnar.
@@ -18,16 +30,15 @@ class SheafNN(nn.Module):
     4. finally I apply the linear layer out to generate the probability vectors from the final embeddings, dim hidden_channels --> out_channels;
     """
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int, 
-                 n_layers: int = 2, 
+                 n_layers: int = 4, 
                  dropout_in: float = 0.5,
                  dropout: float = 0.5, 
-                 stalk: int = 2, 
+                 stalk: int = 4, 
                  non_linear: bool = False,
-                 ego: bool = False,
-                 act: str = 'F.elu',
+                 jk: bool = False,
                  norm_info: dict = {},
                  attention :bool = False,
-                 lin_res: bool = True,
+                 lin_res: bool = False,
                  ablation: str = None):
         
         super().__init__()
@@ -38,11 +49,18 @@ class SheafNN(nn.Module):
             self.stalk = 1
         else:
             self.stalk = stalk
+            self.sheaf = True
+        
+        if ablation == "I_maps":
+            self.I_maps = True
+        else:
+            self.I_maps = False
+
         self.dropout_in = dropout_in  
         self.dropout = dropout
         self.n_layers = n_layers  
         self.non_linear = non_linear
-        self.ego = ego
+        self.ego = jk
         self.attention = attention
         self.learned_residual = lin_res
         self.ablation = ablation
@@ -54,18 +72,16 @@ class SheafNN(nn.Module):
         self.is_norm = norm_info['is_norm']
         self.norm_type = getattr(nn, norm_info['norm_type']) if self.is_norm else None
 
-        self.act = eval(act)
+        self.act = F.elu
         self.laplacian_builder = None  # Will be initialized in the forward pass
         self.edge_index = None
 
         self.MLP_in = MLP(in_channels, hidden_channels, hidden_channels, num_layers=2, dropout=dropout)
-        if self.ego:
-            dim_out = hidden_channels + ego * hidden_channels
-            self.emb_out_1 = nn.Linear(dim_out, hidden_channels)
-            self.emb_out_2 = nn.Linear(hidden_channels, out_channels)
-        else:
-            self.emb_out = nn.Linear(hidden_channels, out_channels)
-
+    
+        dim_out = hidden_channels + self.ego * hidden_channels
+        self.emb_out_1 = nn.Linear(dim_out, hidden_channels)
+        self.emb_out_2 = nn.Linear(hidden_channels, out_channels)
+  
         if self.sheaf:
             num_gen_maps = n_layers if non_linear else 1
             self.gen_maps = nn.ModuleList()
@@ -161,6 +177,10 @@ class SheafNN(nn.Module):
             Genera mappe di restrizione ORTOGONALI usando le riflessioni di Householder.
             x: tensore degli embedding [N, hidden_channels] (output di mlp_in)
             """
+
+            if self.I_maps:
+                return I_maps(edge_index, x, self.stalk)
+            
             num_edges = edge_index.size(1)
             source, destination = edge_index[0, :], edge_index[1, :]
 
@@ -261,14 +281,11 @@ class SheafNN(nn.Module):
     def forward(self, data):
         x = self._forward_body(data)
 
-        if self.ego:
-            x = self.emb_out_1(x)
-            x = self.act(x)
+        x = self.emb_out_1(x)
+        x = self.act(x)
 
-            x = F.dropout(x, p=self.dropout, training=self.training)
-            x = self.emb_out_2(x)
-        else:
-            x = self.emb_out(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.emb_out_2(x)
 
         return x
 

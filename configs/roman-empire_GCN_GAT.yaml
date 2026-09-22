@@ -1,7 +1,7 @@
 seed: 42
 device: cuda
 num_runs: 3
-# save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
+save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
 
 dataset:
   name: roman-empire  # roman-empire is a heterophilous dataset
@@ -9,8 +9,8 @@ dataset:
   normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
 
 noise:
-  type: uniform          # uniform, gaussian, or feature_mask
-  rate: £[0.0, 0.15, 0.3, 0.45]  # noise rates to test
+  type: £[uniform, random, instance]          # uniform, gaussian, or feature_mask
+  rate: £[0.15, 0.3, 0.45]
   seed: 42
 
 model:
@@ -22,10 +22,10 @@ model:
   normalization: batch
   stalk : 1
   
-  ego: True
+  jk: £[True, False]
   
   learned_residual: True
-  ablation: GAT # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
+  ablation: £[GAT, GCN] # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
 
 
 training:

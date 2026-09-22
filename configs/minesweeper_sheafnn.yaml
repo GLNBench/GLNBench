@@ -1,10 +1,10 @@
 seed: 42
 device: cuda
 num_runs: 3
-save_checkpoint: false
+save_checkpoint: false 
 
 dataset:
-  name: amazon-ratings  # roman-empire is a heterophilous dataset
+  name: Minesweeper  # roman-empire is a heterophilous dataset
   root: data
   normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
 
@@ -15,24 +15,25 @@ noise:
 
 model:
   name: SheafNN
-  hidden_channels: 256
-  n_layers: 4
-  dropout_in: 0.2
-  dropout: 0.5
+  hidden_channels: 32
+  n_layers: 15
+  dropout_in: 0.1
+  dropout: 0.2
   normalization: batch
   stalk : 4
-  non_linear: true
-  jk: £[True, False]
-  attention : False
+  non_linear: True
+  jk: True
+  attention : True
 
-
+# Questa è la versione GAT
 training:
   method: SheafNN_Trainer #sheaf_graphcleaner
   checkpoint_every_epoch: False
-  lr: 0.005
-  weight_decay: 0.0005
+  lr: 0.01
+  weight_decay: 0.0
   epochs: 3500         # keep low for local runs
-  patience: 500
+  patience: 1100
+  early_stopping_metric: val_roc_auc
   oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics
   mode: transductive   # transductive or inductive
   # batch_size: 512    # uncomment to enable mini-batch processing

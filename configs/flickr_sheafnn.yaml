@@ -4,33 +4,33 @@ num_runs: 3
 save_checkpoint: false
 
 dataset:
-  name: amazon-ratings  # roman-empire is a heterophilous dataset
+  name: flickr  # roman-empire is a heterophilous dataset
   root: data
   normalize: False      # Set to false for heterophilous datasets (e.g. roman-empire)
 
 noise:
-  type: £[uniform, random, instance]          # uniform, gaussian, or feature_mask
+  type: £[uniform, random, instance]         # uniform, gaussian, or feature_mask
   rate: £[0.15, 0.3, 0.45]
   seed: 42
 
 model:
   name: SheafNN
-  hidden_channels: 256
-  n_layers: 4
-  dropout_in: 0.2
-  dropout: 0.5
+  hidden_channels: 128
+  n_layers: 2
+  dropout_in: 0.6
+  dropout: 0.4
   normalization: batch
   stalk : 4
-  non_linear: true
+  non_linear: True
   jk: £[True, False]
-  attention : False
+  attention : True
 
 
 training:
   method: SheafNN_Trainer #sheaf_graphcleaner
   checkpoint_every_epoch: False
-  lr: 0.005
-  weight_decay: 0.0005
+  lr: 0.001
+  weight_decay: 0.0
   epochs: 3500         # keep low for local runs
   patience: 500
   oversmoothing_every: 50  # must be <= epochs to avoid NaN metrics
