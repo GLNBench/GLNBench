@@ -8,7 +8,7 @@ num_runs: 3
 save_checkpoint: false       # NO .pt checkpoints — only JSON logs (experiment.json + training_log.json). Set true if you want best_run_N.pt for later --eval-only.
 
 dataset:
-  name: minesweeper
+  name: amazon-ratings
   root: data
   normalize: false
 
@@ -17,30 +17,26 @@ noise:
   rate: £[0.15, 0.3, 0.45]
   seed: 42
 
+
 model:
-  name: SheafNN
-  hidden_channels: 64
-  n_layers: 15
-  dropout_in: 0.2
-  dropout: 0.2
-  normalization: batch
-  stalk : 1
+  name: gin
+  hidden_channels: 512
+  n_layers: 9
+  dropout: 0.5
+  mod_norm:: bn
+  jk: £['ego', 'none']
+  use_residual: False
+  lin_res: True
+  #ablation: SAGE # ablation options: GCN, GAT, SAGE, or None (default SheafNN
 
-  jk: £[True, False]
- 
-  learned_residual: False 
-  ablation: SAGE # ablation options: GCN, GAT, SAGE, or None (default SheafNN)
-
-  
 training:
   method: standard
-  lr: 0.01
+  lr: 0.001
   weight_decay: 0.0
-  epochs: 2000
-  patience: 2000
+  epochs: 2500
+  patience: 2500
   oversmoothing_every: 50
   mode: transductive
-  early_stopping_metric: val_roc_auc
   checkpoint_every_epoch: false  # also save a .pt EVERY epoch (huge #files). Keep false; best-epoch is always kept.
 
 gcod_params:                 # DELIBERATELY TUNED per dataset (do NOT "fix" to paper values)

@@ -248,52 +248,49 @@ class GCN(nn.Module):
 
 
 class GIN(nn.Module):
-    """Graph Isomorphism Network.
-
-    Each GINConv wraps an MLP. Last conv's MLP projects hidden_channels -> out_channels.
-    get_embeddings() runs convs[:-1], returning hidden_channels dim.
-    forward() runs all convs, returning out_channels dim.
-
-    NOTE: GINConv does not support edge weights. Any edge_weight on the input
-    data is silently ignored. This is by design — GIN's theoretical power
-    (injective multiset aggregation) requires unweighted sum. Methods that
-    produce adaptive edge weights (RTGNN, NRGNN, GNNGuard) will not benefit
-    from them when using GIN as backbone.
-    """
+    """Graph Isomorphism Network."""
     _edge_weight_warned = False
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
                  n_layers: int = 3, mlp_layers: int = 2, dropout: float = 0.5,
                  train_eps: bool = True, norm_info: dict | None = None,
-                 use_residual: bool = False, jk: str = 'none'):
+                 use_residual: bool = False, jk: str = 'none', lin_res: bool = False):
         super().__init__()
         self.dropout = dropout
         self.n_layers = n_layers
         self.use_residual = use_residual
         self.jk = (jk or 'none').lower()
         self.convs = nn.ModuleList()
+        self.lin_res = lin_res
 
         norm_info = norm_info or {'is_norm': False, 'norm_type': 'LayerNorm'}
         self.is_norm = norm_info['is_norm']
         self.norm_type = resolve_norm_type(norm_info['norm_type']) if self.is_norm else None
         self.norms = nn.ModuleList() if self.is_norm else None
+        self.lins = nn.ModuleList() if self.lin_res else None
 
-        jk_mode = self.jk in ('cat', 'max')
         for i in range(n_layers):
-            in_dim = in_channels if i == 0 else hidden_channels
-            out_dim = hidden_channels if (jk_mode or i != n_layers - 1) else out_channels
-            mlp = MLP(in_dim, hidden_channels, out_dim, mlp_layers, dropout)
+            mlp = MLP(hidden_channels, hidden_channels, hidden_channels, mlp_layers, dropout)
             self.convs.append(GINConv(mlp, train_eps=train_eps))
-            if self.is_norm and (jk_mode or i != n_layers - 1):
+            if self.is_norm:
                 assert self.norms is not None and self.norm_type is not None
                 self.norms.append(self.norm_type(hidden_channels))
-        if jk_mode:
-            jk_in = hidden_channels * n_layers if self.jk == 'cat' else hidden_channels
-            self.jk_lin = nn.Linear(jk_in, out_channels)
+
+            if self.lin_res:
+                self.lins.append(nn.Linear(hidden_channels, hidden_channels))
+
+        # Dimensione corretta per la testa di classificazione lineare
+        if self.jk == 'cat':
+            jk_in = hidden_channels * n_layers
+        elif self.jk == 'ego':
+            jk_in = hidden_channels * 2
+        else:  # 'none' o 'max'
+            jk_in = hidden_channels
+
+        self.lin = nn.Linear(jk_in, out_channels)
+        self.MLP = MLP(in_channels, hidden_channels, hidden_channels, mlp_layers, dropout)
 
     def _forward_body(self, data):
-        """Run convs[:-1] (last conv is the projection). Returns hidden_channels dim.
-        With Jumping-Knowledge, run all convs and aggregate every layer's output."""
         if not GIN._edge_weight_warned and getattr(data, 'edge_weight', None) is not None:
             warnings.warn(
                 "GIN backbone ignores edge_weight (GINConv uses unweighted sum "
@@ -302,43 +299,44 @@ class GIN(nn.Module):
                 stacklevel=2,
             )
             GIN._edge_weight_warned = True
+
         x, edge_index = data.x, data.edge_index
-        if self.jk in ('cat', 'max'):
-            layer_outs = []
-            for i, conv in enumerate(self.convs):
-                h = conv(x, edge_index)
-                if self.is_norm:
-                    h = self.norms[i](h)
-                h = F.relu(h)
-                h = F.dropout(h, p=self.dropout, training=self.training)
-                if self.use_residual and h.size(-1) == x.size(-1):
-                    x = h + x
-                else:
-                    x = h
-                layer_outs.append(x)
-            if self.jk == 'cat':
-                return torch.cat(layer_outs, dim=-1)
-            return torch.stack(layer_outs, dim=-1).max(dim=-1).values
-        for i, conv in enumerate(self.convs[:-1]):
+        x = self.MLP(x)
+        x_in = x
+
+        layer_outs = []
+        for i, conv in enumerate(self.convs):
             h = conv(x, edge_index)
-            if self.is_norm:
-                h = self.norms[i](h)
             h = F.relu(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
-            if self.use_residual and h.size(-1) == x.size(-1):
+            if self.lin_res:
+                x = h + self.lins[i](x)
+            elif self.use_residual and h.size(-1) == x.size(-1):
                 x = h + x
             else:
                 x = h
+
+            if self.is_norm:
+                x = self.norms[i](x)
+
+            if self.jk in ('cat', 'max'):
+                layer_outs.append(x)
+
+        if self.jk == 'cat':
+            return torch.cat(layer_outs, dim=-1)
+        if self.jk == 'ego':
+            return torch.cat((x, x_in), dim=1)
+        if self.jk == 'max':
+            return torch.stack(layer_outs, dim=-1).max(dim=-1).values
+
         return x
 
     def forward(self, data):
         x = self._forward_body(data)
-        if self.jk in ('cat', 'max'):
-            return self.jk_lin(x)
-        return self.convs[-1](x, data.edge_index)
+        return self.lin(x)
 
     def get_embeddings(self, data):
-        """Return hidden_channels-dim node representations."""
+        """Return node representations."""
         return self._forward_body(data)
 
     def initialize(self):
@@ -347,8 +345,14 @@ class GIN(nn.Module):
         if self.norms:
             for norm in self.norms:
                 norm.reset_parameters()
-        if hasattr(self, 'jk_lin'):
-            self.jk_lin.reset_parameters()
+        self.lin.reset_parameters()
+        for module in self.MLP.modules():
+            if hasattr(module, 'reset_parameters'):
+                module.reset_parameters()
+        if self.lin_res and self.lins is not None:
+            for module in self.lins:
+                if hasattr(module, 'reset_parameters'):
+                    module.reset_parameters()
 
 
 class GAT(nn.Module):
