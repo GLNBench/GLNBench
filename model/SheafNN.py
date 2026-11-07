@@ -44,7 +44,8 @@ class SheafNN(nn.Module):
         super().__init__()
         assert hidden_channels % stalk == 0, "Hidden channels must be divisible by the stalk dimension"
         self.hidden_channels = hidden_channels
-        if ablation == "GAT" or ablation == "GCN" or ablation == "SAGE":
+        self.ablation = ablation.lower()
+        if self.ablation in ["sage", "gcn", "gat", "appnp"]:
             self.sheaf = False
             self.stalk = 1
         else:
@@ -63,7 +64,6 @@ class SheafNN(nn.Module):
         self.ego = jk
         self.attention = attention
         self.learned_residual = lin_res
-        self.ablation = ablation
         self.attention_layer = None
         if self.attention:
             self.attention_layer = nn.Linear(2 * hidden_channels, 1)
@@ -104,23 +104,29 @@ class SheafNN(nn.Module):
             heads = 1
             self_loop = True
             
-            if ablation == 'GAT':
+            if ablation == 'gat':
                 # concat=False (average heads) keeps the output at `oc` so the
                 # per-layer linear residual matches for any `heads`. Identical to
                 # tunedGNN's GAT (which uses heads=1) at heads=1; add_self_loops
                 # False matches tunedGNN.
                 return GATConv(ic, oc, heads=heads, concat=False,
                                add_self_loops=False, bias=False)
-            if ablation == 'SAGE':
+            elif ablation == 'sage':
                 from torch_geometric.nn import SAGEConv
                 return SAGEConv(ic, oc)
+            elif ablation == "appnp":
+                from torch_geometric.nn import APPNP
+                return APPNP(self.n_layers, 0.2)
             return GCNConv(ic, oc, cached=False, normalize=True, add_self_loops=self_loop)
 
         self.local_convs = nn.ModuleList()
         for _ in range(n_layers):
-            if not self.sheaf:
+            if not self.sheaf and self.ablation != "appnp":
                 self.local_convs.append(make_conv(hidden_channels, hidden_channels, self.ablation))
                 f = hidden_channels 
+            elif self.ablation == "appnp":
+                if _ == 0:
+                    self.local_convs.append(make_conv(hidden_channels, hidden_channels, self.ablation))
             else:
                 self.linear_layers.append(nn.Linear(stalk, stalk, bias=False))
                 nn.init.eye_(self.linear_layers[-1].weight)
@@ -207,8 +213,11 @@ class SheafNN(nn.Module):
 
 
     def _diffusion(self, x): 
+        if self.ablation == "appnp":
+            x = F.dropout(x, p=self.dropout, training=self.training)
+            x = self.local_convs[0](x, self.edge_index)
+            return x
         x0 = x
-
         for layer in range(self.n_layers):    
 
             if not self.sheaf:
